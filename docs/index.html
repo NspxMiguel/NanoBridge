@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NanoBridge — Nano Banana for agents</title>
+<meta name="description" content="Gemini's Nano Banana image generation wired into agents as an MCP server and a CLI, spending the Gemini plan you already have instead of billing per image.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%8C%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#fbfbfa; --panel:#ffffff; --ink:#16150f; --muted:#63615a;
+    --line:#e6e3db; --accent:#c8a415; --accent-ink:#5c4a00;
+    --code-bg:#16150f; --code-ink:#f3f0e4;
+    --radius:14px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#100f0b; --panel:#191813; --ink:#f1eee2; --muted:#a5a08f;
+      --line:#2b291f; --accent:#ecc94b; --accent-ink:#ffe9a3;
+      --code-bg:#080806; --code-ink:#f1eee2;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:0 20px}
+  header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+  .badge{display:inline-flex;align-items:center;gap:8px;font-size:13px;letter-spacing:.02em;
+         color:var(--accent-ink);background:color-mix(in srgb,var(--accent) 18%,transparent);
+         border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);
+         padding:5px 11px;border-radius:999px;font-family:var(--mono)}
+  h1{font-size:clamp(2.1rem,6vw,3.2rem);line-height:1.08;margin:20px 0 12px;letter-spacing:-.02em}
+  .lede{font-size:1.15rem;color:var(--muted);margin:0;max-width:60ch}
+  .cta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .btn{display:inline-block;padding:10px 16px;border-radius:10px;text-decoration:none;
+       font-weight:600;font-size:.95rem;border:1px solid var(--line);color:var(--ink);
+       background:var(--panel);transition:transform .12s ease,border-color .12s ease}
+  .btn:hover{transform:translateY(-1px);border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#231d00}
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:1.5rem;margin:0 0 6px;letter-spacing:-.01em}
+  h2 + p.sub{margin:0 0 22px;color:var(--muted)}
+  pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:var(--radius);
+      overflow-x:auto;font-family:var(--mono);font-size:.88rem;line-height:1.6;margin:0 0 14px}
+  code{font-family:var(--mono);font-size:.9em}
+  p code,li code{background:color-mix(in srgb,var(--ink) 8%,transparent);
+                 padding:1px 5px;border-radius:5px}
+  .shots{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end;margin:24px 0 8px}
+  .shot{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        padding:16px;text-align:center}
+  .shot img{display:block;image-rendering:pixelated;margin:0 auto 10px}
+  .shot span{font-family:var(--mono);font-size:.76rem;color:var(--muted)}
+  .sheet{width:100%;border:1px solid var(--line);border-radius:var(--radius);
+         background:var(--panel);padding:12px}
+  .sheet img{width:100%;display:block;image-rendering:pixelated}
+  table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:.95rem}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 6px;font-size:1rem}
+  .card p{margin:0;color:var(--muted);font-size:.93rem}
+  ul{padding-left:20px}
+  li{margin:7px 0}
+  footer{padding:34px 0 70px;color:var(--muted);font-size:.9rem;
+         display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between}
+  footer a{color:var(--muted)}
+  .langs{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .langs button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:.82rem;
+                padding:5px 13px;cursor:pointer}
+  .langs button[aria-pressed="true"]{background:var(--accent);color:#231d00;font-weight:600}
+  [data-lang="en"] [lang="pt"]{display:none}
+  [data-lang="pt"] [lang="en"]{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="badge">🍌 NanoBridge 0.1.0</span>
+  <h1><span lang="en">Nano Banana, wired into your agent.</span><span lang="pt">Nano Banana, ligado no seu agente.</span></h1>
+  <p class="lede">
+    <span lang="en">Gemini's image models as an <strong>MCP server</strong> and a <strong>CLI</strong> — spending the Gemini plan you already pay for, instead of billing per image.</span>
+    <span lang="pt">Os modelos de imagem do Gemini como <strong>servidor MCP</strong> e <strong>CLI</strong> — gastando o plano do Gemini que você já paga, em vez de cobrar por imagem.</span>
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/NspxMiguel/NanoBridge">GitHub</a>
+    <a class="btn" href="#install"><span lang="en">Install</span><span lang="pt">Instalar</span></a>
+    <a class="btn" href="#why"><span lang="en">Why not the API</span><span lang="pt">Por que não a API</span></a>
+  </div>
+</header>
+
+<section>
+  <h2><span lang="en">One command, one usable sprite</span><span lang="pt">Um comando, um sprite pronto</span></h2>
+  <p class="sub">
+    <span lang="en">Everything below came out of the commands next to it — trimmed, transparent, sliced and looped by the tool, not by hand.</span>
+    <span lang="pt">Tudo aqui embaixo saiu dos comandos ao lado — recortado, transparente, fatiado e em laço pela ferramenta, não na mão.</span>
+  </p>
+  <div class="shots">
+    <div class="shot">
+      <img src="assets/knight.png" width="147" alt="pixel-art knight sprite with a blue shield">
+      <span>nanobridge sprite "…knight…" --size 160</span>
+    </div>
+    <div class="shot">
+      <img src="assets/slime.gif" width="128" alt="animated green slime, squash and stretch loop">
+      <span>nanobridge sheet "a green slime" --grid 4x2</span>
+    </div>
+  </div>
+  <div class="sheet">
+    <img src="assets/slime-sheet.png" alt="4x2 sprite sheet of a green slime squashing and stretching">
+  </div>
+</section>
+
+<section id="why">
+  <h2><span lang="en">Why not just call the API</span><span lang="pt">Por que não usar a API</span></h2>
+  <p class="sub">
+    <span lang="en">Because on a free plan it answers 429 to every image, and on a paid one it bills twice for something already paid.</span>
+    <span lang="pt">Porque no plano grátis ela responde 429 para toda imagem, e no pago ela cobra de novo por algo que já foi pago.</span>
+  </p>
+  <p>
+    <span lang="en">The AI Studio key is the obvious route and it does not work: <code>gemini-2.5-flash-image</code>, <code>gemini-3.1-flash-image</code> and <code>gemini-3-pro-image</code> all answer <code>429 RESOURCE_EXHAUSTED</code>, because the free tier grants zero image quota. Turning billing on fixes it and starts charging per image — while the Gemini subscription sitting on the same account goes unused.</span>
+    <span lang="pt">A chave do AI Studio é o caminho óbvio e não funciona: <code>gemini-2.5-flash-image</code>, <code>gemini-3.1-flash-image</code> e <code>gemini-3-pro-image</code> respondem <code>429 RESOURCE_EXHAUSTED</code>, porque o nível gratuito dá cota zero para imagem. Ligar faturamento resolve e passa a cobrar por imagem — enquanto a assinatura do Gemini na mesma conta fica parada.</span>
+  </p>
+  <table>
+    <tr><th>Backend</th><th><span lang="en">Auth</span><span lang="pt">Autenticação</span></th><th><span lang="en">Cost</span><span lang="pt">Custo</span></th></tr>
+    <tr>
+      <td><code>web</code> <span lang="en">(default)</span><span lang="pt">(padrão)</span></td>
+      <td><span lang="en">the Gemini cookie already in your browser</span><span lang="pt">o cookie do Gemini que já está no navegador</span></td>
+      <td><span lang="en">the plan you already have</span><span lang="pt">o plano que você já tem</span></td>
+    </tr>
+    <tr>
+      <td><code>api</code></td>
+      <td><code>GEMINI_API_KEY</code></td>
+      <td><span lang="en">per image, needs active billing</span><span lang="pt">por imagem, exige faturamento ativo</span></td>
+    </tr>
+  </table>
+  <p>
+    <span lang="en"><code>nanobridge doctor</code> says which one is live and how much quota is left. Nothing to paste, nothing to buy.</span>
+    <span lang="pt"><code>nanobridge doctor</code> diz qual está de pé e quanta cota sobrou. Nada para colar, nada para comprar.</span>
+  </p>
+</section>
+
+<section id="install">
+  <h2><span lang="en">Install</span><span lang="pt">Instalar</span></h2>
+  <p class="sub">
+    <span lang="en">Homebrew, or clone and run the installer. Needs Python 3.11+ and a browser signed in to gemini.google.com.</span>
+    <span lang="pt">Homebrew, ou clonar e rodar o instalador. Precisa de Python 3.11+ e um navegador logado no gemini.google.com.</span>
+  </p>
+<pre><code>brew install --cask nspxmiguel/tap/nanobridge
+
+# <span lang="en">or</span><span lang="pt">ou</span>
+git clone https://github.com/NspxMiguel/NanoBridge.git
+cd NanoBridge &amp;&amp; ./install.sh</code></pre>
+  <p>
+    <span lang="en">Either way you get the <code>nanobridge</code> command, the MCP server registered with Claude Code, and the agent skill installed.</span>
+    <span lang="pt">Dos dois jeitos você fica com o comando <code>nanobridge</code>, o servidor MCP registrado no Claude Code e a skill do agente instalada.</span>
+  </p>
+</section>
+
+<section>
+  <h2><span lang="en">From the shell</span><span lang="pt">No terminal</span></h2>
+<pre><code>nanobridge doctor
+nanobridge sprite "a green slime" --style pixel --size 128
+nanobridge icon "a compass rose" --style flat
+nanobridge edit hero.png "make the sky stormy, keep everything else"
+
+nanobridge sheet "a green slime" --grid 4x2 \
+  --action "squash down and stretch back up, a bouncy idle loop" --fps 10
+
+# <span lang="en">local, no network, no quota</span><span lang="pt">local, sem rede, sem cota</span>
+nanobridge cut photo.jpg --transparent --trim --size 256
+nanobridge slice sheet.png --grid 6x1 --size 96</code></pre>
+</section>
+
+<section>
+  <h2><span lang="en">From an agent</span><span lang="pt">Do agente</span></h2>
+  <p class="sub">
+    <span lang="en">Eight MCP tools — and every generating one hands the picture back to the model.</span>
+    <span lang="pt">Oito ferramentas MCP — e toda que gera devolve a imagem para o modelo.</span>
+  </p>
+  <div class="grid">
+    <div class="card"><h3>generate_sprite</h3><p><span lang="en">One sprite, background removed and trimmed.</span><span lang="pt">Um sprite, sem fundo e já recortado.</span></p></div>
+    <div class="card"><h3>generate_sprite_sheet</h3><p><span lang="en">A sheet, sliced into frames, assembled into a looping GIF.</span><span lang="pt">Uma folha, fatiada em quadros, montada em GIF que dá laço.</span></p></div>
+    <div class="card"><h3>generate_image</h3><p><span lang="en">Free-form, with reference images and multi-turn edits.</span><span lang="pt">Livre, com imagem de referência e edição em várias rodadas.</span></p></div>
+    <div class="card"><h3>edit_image</h3><p><span lang="en">Change any image on disk in plain language.</span><span lang="pt">Muda qualquer imagem do disco em linguagem normal.</span></p></div>
+    <div class="card"><h3>cut_image / slice_sheet</h3><p><span lang="en">Local post-processing. No network, no quota.</span><span lang="pt">Pós-processamento local. Sem rede, sem cota.</span></p></div>
+    <div class="card"><h3>nanobridge_status</h3><p><span lang="en">Which backend is live and what quota is left.</span><span lang="pt">Qual canal está de pé e quanta cota sobrou.</span></p></div>
+  </div>
+  <p style="margin-top:18px">
+    <span lang="en">The preview handed back is the point: an agent that cannot see what it drew cannot tell a good sprite from a broken one, and iterates blind.</span>
+    <span lang="pt">A pré-visualização de volta é o ponto: um agente que não vê o que desenhou não distingue sprite bom de sprite quebrado, e itera às cegas.</span>
+  </p>
+</section>
+
+<section>
+  <h2><span lang="en">What the post-processing does</span><span lang="pt">O que o pós-processamento faz</span></h2>
+  <p class="sub">
+    <span lang="en">The model returns a large JPEG on a flat background. Sprites need the opposite.</span>
+    <span lang="pt">O modelo devolve um JPEG grande com fundo chapado. Sprite precisa do contrário.</span>
+  </p>
+  <ul>
+    <li><span lang="en"><strong>Background removal is border-connected</strong>, not colour-matched. A white eye inside a sprite has the same colour as the white behind it — only the region that reaches the image border is erased.</span>
+        <span lang="pt"><strong>A remoção de fundo é por ligação com a borda</strong>, não por cor igual. O olho branco dentro do sprite tem a mesma cor do branco atrás dele — só some a região que alcança a borda da imagem.</span></li>
+    <li><span lang="en"><strong>Resize is nearest-neighbour.</strong> Pixel art resampled with a smooth filter stops looking like pixel art.</span>
+        <span lang="pt"><strong>A redução é nearest-neighbour.</strong> Pixel art reamostrada com filtro suave deixa de parecer pixel art.</span></li>
+    <li><span lang="en"><strong>Slicing is geometric.</strong> The grid asked for in the prompt is the grid used to cut, and every frame is written out — that is where you see whether the model obeyed.</span>
+        <span lang="pt"><strong>O corte é geométrico.</strong> A grade pedida no prompt é a grade usada para fatiar, e todo quadro é salvo — é ali que se vê se o modelo obedeceu.</span></li>
+    <li><span lang="en"><strong>GIF keeps its transparency.</strong> GIF has no alpha channel, so a palette index is reserved for the empty pixels — without it a sprite's background turns black.</span>
+        <span lang="pt"><strong>O GIF mantém a transparência.</strong> GIF não tem canal alfa, então um índice da paleta fica reservado para o vazio — sem isso o fundo do sprite vira preto.</span></li>
+  </ul>
+</section>
+
+<section>
+  <h2><span lang="en">Limits worth knowing</span><span lang="pt">Limites que vale saber</span></h2>
+  <ul>
+    <li><span lang="en">The web backend rides a browser session. When it expires, sign in again at gemini.google.com — <code>nanobridge doctor</code> says so in one line.</span>
+        <span lang="pt">O canal web depende de uma sessão de navegador. Quando ela expira, é entrar de novo no gemini.google.com — o <code>nanobridge doctor</code> avisa numa linha.</span></li>
+    <li><span lang="en">It talks to an interface Google does not document, so a change on their side can break it. The <code>api</code> backend is the fallback that stays put.</span>
+        <span lang="pt">Ele fala com uma interface que o Google não documenta, então mudança do lado deles pode quebrar. O canal <code>api</code> é a reserva que não sai do lugar.</span></li>
+    <li><span lang="en">Generated images carry Google's SynthID watermark.</span>
+        <span lang="pt">As imagens geradas carregam a marca d'água SynthID do Google.</span></li>
+    <li><span lang="en">For plain interface icons, logos, diagrams and charts, hand-written SVG still wins: smaller, crisp at any size, recolourable by CSS.</span>
+        <span lang="pt">Para ícone de interface, logo, diagrama e gráfico, SVG escrito à mão ainda ganha: menor, nítido em qualquer tamanho, recolorível por CSS.</span></li>
+  </ul>
+</section>
+
+<footer>
+  <span>MIT · <a href="https://github.com/NspxMiguel/NanoBridge">github.com/NspxMiguel/NanoBridge</a></span>
+  <span class="langs">
+    <button type="button" data-set="en" aria-pressed="true">EN</button>
+    <button type="button" data-set="pt" aria-pressed="false">PT</button>
+  </span>
+</footer>
+
+</div>
+<script>
+  // O idioma do navegador decide o padrão, e a escolha fica salva.
+  const root = document.documentElement;
+  const buttons = [...document.querySelectorAll('.langs button')];
+  function apply(lang){
+    root.setAttribute('data-lang', lang);
+    root.setAttribute('lang', lang);
+    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.set === lang)));
+    try { localStorage.setItem('nanobridge-lang', lang); } catch (e) {}
+  }
+  let saved = null;
+  try { saved = localStorage.getItem('nanobridge-lang'); } catch (e) {}
+  apply(saved || ((navigator.language || 'en').toLowerCase().startsWith('pt') ? 'pt' : 'en'));
+  buttons.forEach(b => b.addEventListener('click', () => apply(b.dataset.set)));
+</script>
+</body>
+</html>
