@@ -5,9 +5,10 @@ import io
 import json
 
 import pytest
+from conftest import opaque_colours
 from PIL import Image
 
-from nanobridge import cli
+from nanobridge import cli, core
 from nanobridge.backends.base import Backend, Result
 
 
@@ -189,3 +190,50 @@ def test_atlas_command_accepts_a_directory(tmp_path):
 def test_atlas_command_rejects_an_empty_call(tmp_path, capsys):
     assert cli.main(["--lang", "en", "atlas", "-o", str(tmp_path)]) == 2
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_palettes_command_lists_the_builtins(capsys):
+    assert cli.main(["--lang", "en", "palettes"]) == 0
+    out = capsys.readouterr().out
+    assert "pico8" in out and "gameboy" in out
+    assert "#000000" in out, "listar sem as cores não ajuda a escolher"
+
+
+def test_palette_extract_and_save(tmp_path, capsys):
+    src = tmp_path / "s.png"
+    Image.open(io.BytesIO(png())).save(src)
+    dest = tmp_path / "p.hex"
+    assert cli.main(["--lang", "en", "palette", str(src), "-n", "4", "-o", str(dest)]) == 0
+    assert dest.exists()
+    assert "#" in capsys.readouterr().out
+
+
+def test_palette_extract_as_json(tmp_path, capsys):
+    src = tmp_path / "s.png"
+    Image.open(io.BytesIO(png())).save(src)
+    assert cli.main(["palette", str(src), "-n", "3", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert isinstance(data, list) and all(c.startswith("#") for c in data)
+
+
+def test_palette_apply_rewrites_the_image(tmp_path, capsys):
+    src = tmp_path / "s.png"
+    Image.new("RGBA", (20, 20), (200, 30, 30, 255)).save(src)
+    out = tmp_path / "o.png"
+    assert cli.main(["--lang", "en", "palette", str(src), "--apply", "gameboy", "-o", str(out)]) == 0
+    with Image.open(out) as img:
+        assert opaque_colours(img) <= set(core.palettes.resolve("gameboy"))
+
+
+def test_palette_apply_with_an_unknown_name_is_a_message(tmp_path, capsys):
+    src = tmp_path / "s.png"
+    Image.open(io.BytesIO(png())).save(src)
+    assert cli.main(["--lang", "en", "palette", str(src), "--apply", "nope"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_sprite_accepts_a_palette_flag(fake, tmp_path):
+    assert cli.main(["sprite", "a slime", "--out", str(tmp_path), "--name", "s",
+                     "--palette", "gameboy"]) == 0
+    with Image.open(tmp_path / "s.png") as img:
+        assert opaque_colours(img) <= set(core.palettes.resolve("gameboy"))

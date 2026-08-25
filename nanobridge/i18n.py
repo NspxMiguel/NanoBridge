@@ -108,6 +108,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "sheet sliced into {n} frames ({cols}x{rows}) at {path}",
     },
     "sheet.gif": {"pt": "GIF montado: {path}", "en": "GIF assembled: {path}"},
+    "palette.list": {"pt": "paletas embutidas", "en": "built-in palettes"},
+    "palette.extracted": {
+        "pt": "{n} cores extraídas de {src}",
+        "en": "{n} colours extracted from {src}",
+    },
+    "palette.saved": {"pt": "paleta salva em {path}", "en": "palette saved to {path}"},
+    "palette.applied": {"pt": "paleta aplicada: {path}", "en": "palette applied: {path}"},
     "atlas.packed": {
         "pt": "atlas com {n} sprites em {path}, manifesto em {manifest}",
         "en": "atlas with {n} sprites at {path}, manifest at {manifest}",

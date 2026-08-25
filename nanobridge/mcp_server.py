@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - mcp 1.x
     from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
-from . import config, core, imaging
+from . import config, core, imaging, palettes
 from .backends import all_backends, pick
 from .core import STYLES
 from .errors import NanoBridgeError
@@ -127,6 +127,7 @@ async def generate_image(
     transparent: bool = False,
     trim: bool = False,
     size: int | None = None,
+    palette: str | None = None,
     reference_images: list[str] | None = None,
     conversation: str | None = None,
     backend: str | None = None,
@@ -144,6 +145,7 @@ async def generate_image(
         transparent=transparent,
         trim=trim,
         size=size,
+        palette=palette,
         conversation=conversation,
         **_kwargs(out_dir, name, backend, model),
     )
@@ -156,6 +158,7 @@ async def generate_sprite(
     subject: str,
     style: str = "pixel",
     size: int | None = 256,
+    palette: str | None = None,
     out_dir: str | None = None,
     name: str | None = None,
     backend: str | None = None,
@@ -164,8 +167,16 @@ async def generate_sprite(
 
     `style` is one of pixel, flat, cartoon, 3d, realistic, sketch — or any free
     text describing the look you want.
+
+    `palette` locks the output to a fixed set of colours — a built-in name (see
+    `list_palettes`), a .hex file, or a comma-separated #RRGGBB list. Pass the
+    same palette to every sprite in a cast and they look like one game; without
+    it the model picks slightly different greens each time. `extract_palette`
+    turns a sprite you already like into that palette.
     """
-    result = await core.sprite(subject, style=style, size=size, **_kwargs(out_dir, name, backend, None))
+    result = await core.sprite(
+        subject, style=style, size=size, palette=palette, **_kwargs(out_dir, name, backend, None)
+    )
     return _respond(result)
 
 
@@ -175,6 +186,7 @@ async def generate_icon(
     subject: str,
     style: str = "flat",
     size: int | None = 512,
+    palette: str | None = None,
     out_dir: str | None = None,
     name: str | None = None,
     backend: str | None = None,
@@ -184,7 +196,9 @@ async def generate_icon(
     Prefer a hand-written SVG for plain interface icons; reach for this when the
     icon wants illustration an SVG would not carry.
     """
-    result = await core.icon(subject, style=style, size=size, **_kwargs(out_dir, name, backend, None))
+    result = await core.icon(
+        subject, style=style, size=size, palette=palette, **_kwargs(out_dir, name, backend, None)
+    )
     return _respond(result)
 
 
@@ -197,6 +211,7 @@ async def generate_sprite_sheet(
     style: str = "pixel",
     fps: int = 10,
     frame_size: int | None = 128,
+    palette: str | None = None,
     out_dir: str | None = None,
     name: str | None = None,
     backend: str | None = None,
@@ -214,6 +229,7 @@ async def generate_sprite_sheet(
         style=style,
         fps=fps,
         frame_size=frame_size,
+        palette=palette,
         **_kwargs(out_dir, name, backend, None),
     )
     return _respond(result)
@@ -247,6 +263,63 @@ async def edit_image(
         **_kwargs(out_dir, name, backend, None),
     )
     return _respond(result)
+
+
+@mcp.tool()
+@handled
+def list_palettes() -> str:
+    """The built-in palettes available to `palette` arguments, with their colours."""
+    lines = []
+    for name in palettes.names():
+        colours = palettes.resolve(name)
+        lines.append(f"{name} ({len(colours)}): " + " ".join(palettes.rgb_to_hex(c) for c in colours))
+    lines.append(
+        "Any `palette` argument also accepts a path to a .hex file (one #RRGGBB per line) "
+        "or a comma-separated list of #RRGGBB colours."
+    )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+@handled
+def extract_palette(image: str, count: int = 16, out: str | None = None) -> str:
+    """Read the dominant, visually distinct colours out of an existing image.
+
+    This is half of keeping a cast coherent: extract the palette from the first
+    sprite you are happy with, then pass it as `palette` to every later
+    generation so the whole cast looks like it came from one game rather than
+    from six separate sessions.
+
+    Transparent pixels are excluded, and colours too close to each other to tell
+    apart are dropped — otherwise a sprite with a large dark area returns four
+    near-identical blacks instead of the colours that define the character.
+    """
+    colours = core.palette_from_image(image, count=count)
+    as_hex = [palettes.rgb_to_hex(c) for c in colours]
+    saved = palettes.save(colours, Path(out).expanduser()) if out else None
+    return json.dumps(
+        {"colours": as_hex, "count": len(as_hex), "saved_to": str(saved) if saved else None},
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
+@handled
+def apply_palette(
+    image: str,
+    palette: str,
+    out: str | None = None,
+    dither: bool = False,
+) -> list[TextContent | ImageContent]:
+    """Rewrite an image using only a palette's colours. Local, no quota.
+
+    `palette` is a built-in name (see `list_palettes`), a path to a .hex file,
+    or a comma-separated list of #RRGGBB. Dithering is off by default: pixel art
+    wants flat colour, and error diffusion sprays exactly the half-tone noise
+    that locking a palette is meant to remove.
+    """
+    target = core.apply_palette(image, palette, out=Path(out).expanduser() if out else None, dither=dither)
+    return [TextContent(type="text", text=json.dumps({"path": str(target)})), _preview(target)]
 
 
 @mcp.tool()

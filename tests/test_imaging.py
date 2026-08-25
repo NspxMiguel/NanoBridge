@@ -1,6 +1,7 @@
 import io
 
 import pytest
+from conftest import opaque_colours
 from PIL import Image, ImageDraw
 
 from nanobridge import imaging
@@ -136,3 +137,68 @@ def test_pack_atlas_respects_padding():
     _, entries = imaging.pack_atlas(images, padding=5)
     a, b = sorted(entries, key=lambda e: e.x)
     assert b.x - (a.x + a.w) == 5
+
+
+def test_quantize_uses_only_palette_colours():
+    src = Image.new("RGBA", (40, 40))
+    ImageDraw.Draw(src).rectangle((0, 0, 39, 39), fill=(123, 45, 200, 255))
+    out = imaging.quantize_to_palette(src, [(0, 0, 0), (255, 255, 255)])
+    used = opaque_colours(out)
+    assert used <= {(0, 0, 0), (255, 255, 255)}
+
+
+def test_quantize_preserves_alpha():
+    src = Image.new("RGBA", (20, 20), (0, 0, 0, 0))
+    ImageDraw.Draw(src).ellipse((5, 5, 15, 15), fill=(200, 30, 30, 255))
+    out = imaging.quantize_to_palette(src, [(255, 0, 0), (0, 0, 255)])
+    assert out.getpixel((0, 0))[3] == 0, "o vazio tem que continuar vazio"
+    assert out.getpixel((10, 10))[3] == 255
+
+
+def test_quantize_rejects_an_empty_palette():
+    with pytest.raises(ValueError):
+        imaging.quantize_to_palette(Image.new("RGBA", (4, 4)), [])
+
+
+def test_quantize_maps_to_the_nearest_colour_not_an_arbitrary_one():
+    src = Image.new("RGBA", (4, 4), (250, 250, 250, 255))
+    out = imaging.quantize_to_palette(src, [(0, 0, 0), (255, 255, 255)])
+    assert out.getpixel((0, 0))[:3] == (255, 255, 255)
+
+
+def test_extract_palette_ignores_transparent_pixels():
+    img = Image.new("RGBA", (60, 60), (0, 0, 0, 0))
+    ImageDraw.Draw(img).rectangle((10, 10, 50, 50), fill=(20, 200, 90, 255))
+    colours = imaging.extract_palette(img, count=3)
+    assert colours
+    # nada de preto vindo do fundo transparente
+    assert all(c != (0, 0, 0) for c in colours), colours
+
+
+def test_extract_palette_returns_visually_distinct_colours():
+    """Sem filtro de distância um sprite escuro devolvia quatro pretos iguais."""
+    img = Image.new("RGBA", (80, 80), (0, 0, 0, 255))
+    draw = ImageDraw.Draw(img)
+    for i, shade in enumerate([(1, 1, 1), (3, 0, 1), (2, 2, 0), (250, 30, 30)]):
+        draw.rectangle((i * 20, 0, i * 20 + 19, 79), fill=shade)
+    colours = imaging.extract_palette(img, count=4)
+    for i, a in enumerate(colours):
+        for b in colours[i + 1 :]:
+            assert imaging._perceptual_distance(a, b) >= 28.0, f"{a} e {b} são a mesma cor"
+
+
+def test_extract_palette_respects_the_count():
+    img = Image.new("RGBA", (60, 20))
+    draw = ImageDraw.Draw(img)
+    for i, colour in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]):
+        draw.rectangle((i * 15, 0, i * 15 + 14, 19), fill=(*colour, 255))
+    assert len(imaging.extract_palette(img, count=2)) <= 2
+
+
+def test_extract_palette_rejects_a_bad_count():
+    with pytest.raises(ValueError):
+        imaging.extract_palette(Image.new("RGBA", (4, 4)), count=0)
+
+
+def test_perceptual_distance_is_zero_for_identical_colours():
+    assert imaging._perceptual_distance((10, 20, 30), (10, 20, 30)) == 0

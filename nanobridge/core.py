@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import imaging
+from . import imaging, palettes
 from .backends import Backend, pick
 from .config import default_out_dir
 from .errors import NoImageError
@@ -228,6 +228,8 @@ async def _run(
     size: int | None = None,
     tolerance: int = 24,
     retries: int = 2,
+    palette: str | list[str] | None = None,
+    dither: bool = False,
 ) -> Generated:
     # A conferência do arquivo mora aqui, antes de escolher canal e antes de
     # subir o cliente do Gemini (que custa uma ida à rede): caminho errado tem
@@ -246,7 +248,11 @@ async def _run(
     target = Path(out_dir or default_out_dir()).expanduser()
     target.mkdir(parents=True, exist_ok=True)
     stem = safe_stem(name) if name else f"{slugify(prompt)}-{datetime.now().strftime('%H%M%S')}"
-    needs_pillow = bool(transparent or trim or size)
+    # Resolver a paleta ANTES de gastar Pillow em cada imagem, e antes de
+    # escrever qualquer arquivo: nome de paleta errado tem que falhar de cara,
+    # não depois de meia dúzia de sprites gravados.
+    colours = palettes.resolve(palette) if palette else None
+    needs_pillow = bool(transparent or trim or size or colours)
 
     paths: list[Path] = []
     for index, raw in enumerate(result.images):
@@ -259,6 +265,10 @@ async def _run(
                 img = imaging.trim(img, tol=tolerance)
             if size:
                 img = imaging.fit(img, size, pad=False)
+            if colours:
+                # Depois de redimensionar: reduzir a imagem mistura pixels
+                # vizinhos e reintroduz cores fora da paleta.
+                img = imaging.quantize_to_palette(img, colours, dither=dither)
             path = unique_path(target, f"{stem}{part}", ".png")
             img.save(path)
         else:
@@ -422,3 +432,25 @@ def build_atlas(
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
     return AtlasResult(path=image_path, manifest_path=manifest_path, entries=entries)
+
+
+def palette_from_image(image: str | Path, count: int = 16) -> list[imaging.Rgb]:
+    """A paleta de um sprite já feito, para travar o resto do elenco nela."""
+    return imaging.extract_palette(imaging.open_image(existing_path(image)), count=count)
+
+
+def apply_palette(
+    image: str | Path,
+    palette: str | list[str],
+    *,
+    out: Path | None = None,
+    dither: bool = False,
+) -> Path:
+    """Reescreve uma imagem do disco na paleta pedida. Local, sem cota."""
+    source = existing_path(image)
+    colours = palettes.resolve(palette)
+    result = imaging.quantize_to_palette(imaging.open_image(source), colours, dither=dither)
+    target = Path(out) if out else source.with_name(f"{source.stem}-palette.png")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    result.save(target)
+    return target

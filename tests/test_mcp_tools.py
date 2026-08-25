@@ -6,6 +6,7 @@ import io
 import json
 
 import pytest
+from conftest import opaque_colours
 from PIL import Image
 
 from nanobridge import backends, mcp_server
@@ -170,3 +171,47 @@ def test_pack_atlas_missing_file_is_a_message(tmp_path):
 def test_pack_atlas_empty_list_is_a_message():
     with pytest.raises(ToolError):
         mcp_server.pack_atlas([])
+
+
+def test_list_palettes_names_the_builtins_and_the_other_forms():
+    text = mcp_server.list_palettes()
+    assert "pico8" in text and "gameboy" in text
+    assert ".hex" in text, "o agente precisa saber que aceita arquivo e lista"
+
+
+def test_extract_palette_tool_returns_hex_and_can_save(tmp_path):
+    src = tmp_path / "s.png"
+    Image.open(io.BytesIO(png())).save(src)
+    dest = tmp_path / "p.hex"
+    data = json.loads(mcp_server.extract_palette(str(src), count=4, out=str(dest)))
+    assert data["count"] == len(data["colours"]) <= 4
+    assert all(c.startswith("#") for c in data["colours"])
+    assert dest.exists()
+
+
+def test_apply_palette_tool_rewrites_and_previews(tmp_path):
+    src = tmp_path / "s.png"
+    Image.new("RGBA", (20, 20), (200, 30, 30, 255)).save(src)
+    out = tmp_path / "o.png"
+    parts = mcp_server.apply_palette(str(src), "gameboy", out=str(out))
+    assert json.loads(next(p.text for p in parts if getattr(p, "type", "") == "text"))["path"]
+    assert images(parts)
+    with Image.open(out) as img:
+        assert opaque_colours(img) <= set(mcp_server.palettes.resolve("gameboy"))
+
+
+def test_apply_palette_tool_unknown_palette_is_a_message(tmp_path):
+    src = tmp_path / "s.png"
+    Image.open(io.BytesIO(png())).save(src)
+    with pytest.raises(ToolError):
+        mcp_server.apply_palette(str(src), "nao-existe")
+
+
+@pytest.mark.asyncio
+async def test_generate_sprite_accepts_a_palette(fake, tmp_path):
+    parts = await mcp_server.generate_sprite(
+        "a slime", out_dir=str(tmp_path), name="s", palette="gameboy"
+    )
+    path = payload(parts)["paths"][0]
+    with Image.open(path) as img:
+        assert opaque_colours(img) <= set(mcp_server.palettes.resolve("gameboy"))

@@ -48,7 +48,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# O sinal × aparece de propósito: é o que o usuário digita em "4×2".
-"nanobridge/imaging.py" = ["RUF001"]
+# O sinal × aparece de propósito: é o que o usuário digita em "4×2", e é como
+# se escreve uma dimensão ("2816×1536") num comentário.
+"nanobridge/imaging.py" = ["RUF001", "RUF002"]
 # Canal falso de teste: atributo mutável de classe é o ponto, e o × idem.
 "tests/*" = ["RUF012", "RUF001"]

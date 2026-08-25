@@ -17,6 +17,8 @@ from PIL import Image
 # Um sprite raramente passa disso; acima daqui o flood fill fica caro à toa.
 _MASK_MAX_SIDE = 512
 
+Rgb = tuple[int, int, int]
+
 
 def sniff_extension(data: bytes) -> str:
     """A extensão de verdade do que veio — o Gemini entrega JPEG chamando de PNG."""
@@ -264,3 +266,112 @@ def pack_atlas(
     order = {name: index for index, (name, _) in enumerate(images)}
     placements.sort(key=lambda entry: order[entry.name])
     return canvas, placements
+
+
+def _palette_image(colours: list[tuple[int, int, int]]) -> Image.Image:
+    """Empacota a paleta no formato que o Pillow espera para quantizar.
+
+    Pillow quer uma imagem modo "P" com a paleta preenchida até 256 entradas.
+    As sobras repetem a primeira cor: entrada vazia vira preto e o preto atrai
+    pixels que não deveriam ir para ele.
+    """
+    flat: list[int] = []
+    for r, g, b in colours:
+        flat.extend((r, g, b))
+    first = colours[0]
+    while len(flat) < 256 * 3:
+        flat.extend(first)
+    palette = Image.new("P", (1, 1))
+    palette.putpalette(flat[: 256 * 3])
+    return palette
+
+
+def quantize_to_palette(
+    img: Image.Image,
+    colours: list[tuple[int, int, int]],
+    dither: bool = False,
+) -> Image.Image:
+    """Reescreve a imagem usando só as cores da paleta, preservando o alfa.
+
+    A quantização roda no C do Pillow, não em Python: um sprite de 2816×1536 são
+    4,3 milhões de pixels, e comparar cada um com 16 cores em laço Python levaria
+    dezenas de segundos.
+
+    `dither=False` por padrão porque pixel art quer cor chapada — o dithering do
+    Floyd-Steinberg espalha ruído de meio-tom que é exatamente o que se está
+    tentando evitar ao travar a paleta.
+    """
+    if not colours:
+        raise ValueError("empty palette")
+
+    rgba = img.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
+    quantized = rgba.convert("RGB").quantize(palette=_palette_image(colours), dither=mode)
+    out = quantized.convert("RGBA")
+    out.putalpha(alpha)
+    return out
+
+
+def _perceptual_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    """Distância "redmean": mais próxima do olho que a euclidiana pura em RGB.
+
+    Pesa os canais conforme o vermelho médio das duas cores, que é o truque
+    barato e conhecido para não tratar um azul-escuro e um preto como se
+    estivessem tão longe quanto um verde e um preto.
+    """
+    red_mean = (a[0] + b[0]) / 2
+    dr, dg, db = a[0] - b[0], a[1] - b[1], a[2] - b[2]
+    return (
+        (2 + red_mean / 256) * dr * dr
+        + 4 * dg * dg
+        + (2 + (255 - red_mean) / 256) * db * db
+    ) ** 0.5
+
+
+def extract_palette(
+    img: Image.Image,
+    count: int = 16,
+    alpha_threshold: int = 128,
+    min_distance: float = 28.0,
+) -> list[tuple[int, int, int]]:
+    """As cores dominantes e VISUALMENTE DISTINTAS da imagem.
+
+    Pixels transparentes ficam de fora: num sprite recortado eles são a maioria,
+    e a paleta sairia dominada pelo vazio.
+
+    A distância mínima não é capricho. Sem ela, um sprite com uma área escura
+    grande devolvia `#000000`, `#030001`, `#010005` e `#010000` como quatro
+    cores — quatro pretos que ninguém distingue, ocupando o lugar das cores que
+    de fato definem o personagem. Travar um elenco nessa paleta não travaria
+    nada.
+    """
+    if count < 1:
+        raise ValueError("count must be >= 1")
+
+    rgba = img.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    rgb = rgba.convert("RGB")
+
+    # O fundo transparente vira uma cor sentinela improvável, quantiza junto e
+    # sai da lista no fim — mais rápido do que filtrar pixel a pixel em Python.
+    sentinel = (1, 0, 1)
+    visible = Image.composite(rgb, Image.new("RGB", rgb.size, sentinel),
+                              alpha.point(lambda v: 255 if v >= alpha_threshold else 0))
+    # Pede bem mais bins do que o alvo: o filtro de distância descarta muitos, e
+    # sem folga a paleta sairia curta.
+    reduced = visible.quantize(colors=min(256, max(count * 4, 16)), method=Image.Quantize.MEDIANCUT)
+    palette = reduced.getpalette() or []
+    counts = sorted(reduced.getcolors() or [], reverse=True)
+
+    out: list[tuple[int, int, int]] = []
+    for _, index in counts:
+        colour = (palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2])
+        if colour == sentinel:
+            continue
+        if any(_perceptual_distance(colour, chosen) < min_distance for chosen in out):
+            continue
+        out.append(colour)
+        if len(out) == count:
+            break
+    return out

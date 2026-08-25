@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import __version__, config, core, imaging
+from . import __version__, config, core, imaging, palettes
 from .backends import all_backends, pick
 from .errors import NanoBridgeError
 from .i18n import SUPPORTED, t
@@ -29,6 +29,13 @@ def _common(parser: argparse.ArgumentParser, *, post: bool = True) -> None:
         parser.add_argument("--no-trim", dest="trim", action="store_false")
         parser.add_argument("--size", type=int, help="lado máximo em px / max side in px")
         parser.add_argument("--tolerance", type=int, default=24, help="tolerância de cor do fundo")
+        parser.add_argument(
+            "--palette",
+            help="travar nas cores de uma paleta: nome embutido, arquivo .hex, "
+            "ou lista #RRGGBB,#RRGGBB / lock to a palette",
+        )
+        parser.add_argument("--dither", action="store_true", help="difusão de erro ao quantizar")
+        parser.add_argument("--retries", type=int, default=2, help="tentativas extras se vier texto")
         parser.set_defaults(transparent=None, trim=None)
 
 
@@ -42,6 +49,12 @@ def _post_kwargs(args: argparse.Namespace) -> dict:
         out["size"] = args.size
     if getattr(args, "tolerance", None) is not None:
         out["tolerance"] = args.tolerance
+    if getattr(args, "palette", None):
+        out["palette"] = args.palette
+    if getattr(args, "dither", False):
+        out["dither"] = True
+    if getattr(args, "retries", None) is not None:
+        out["retries"] = args.retries
     return out
 
 
@@ -235,6 +248,34 @@ def _cmd_atlas(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_palettes(args: argparse.Namespace) -> int:
+    """Lista as paletas embutidas, com as cores, para escolher sem adivinhar."""
+    print(t("palette.list"))
+    for name in palettes.names():
+        colours = palettes.resolve(name)
+        print(f"  {name:16} {len(colours):>3} " + " ".join(palettes.rgb_to_hex(c) for c in colours[:8]))
+    return 0
+
+
+def _cmd_palette(args: argparse.Namespace) -> int:
+    """Extrai a paleta de uma imagem, ou reescreve uma imagem numa paleta."""
+    if args.apply:
+        out = core.apply_palette(args.image, args.apply, out=args.out, dither=args.dither)
+        print(t("palette.applied", path=out))
+        return 0
+
+    colours = core.palette_from_image(args.image, count=args.count)
+    if args.json:
+        print(json.dumps([palettes.rgb_to_hex(c) for c in colours], indent=2))
+        return 0
+    print(t("palette.extracted", n=len(colours), src=args.image))
+    for colour in colours:
+        print(f"  {palettes.rgb_to_hex(colour)}")
+    if args.out:
+        print(t("palette.saved", path=palettes.save(colours, Path(args.out))))
+    return 0
+
+
 def _cmd_lang(args: argparse.Namespace) -> int:
     if args.lang not in SUPPORTED:
         print(t("cfg.lang_bad", lang=args.lang), file=sys.stderr)
@@ -326,6 +367,19 @@ def build_parser() -> argparse.ArgumentParser:
     atlas.add_argument("--max-width", type=int, default=2048)
     atlas.add_argument("--json", action="store_true")
     atlas.set_defaults(func=_cmd_atlas, is_async=False)
+
+    sub.add_parser("palettes", help="paletas embutidas / built-in palettes").set_defaults(
+        func=_cmd_palettes, is_async=False
+    )
+
+    palette = sub.add_parser("palette", help="extrair ou aplicar paleta / extract or apply a palette")
+    palette.add_argument("image")
+    palette.add_argument("--apply", help="paleta a aplicar / palette to apply")
+    palette.add_argument("-n", "--count", type=int, default=16)
+    palette.add_argument("-o", "--out")
+    palette.add_argument("--dither", action="store_true")
+    palette.add_argument("--json", action="store_true")
+    palette.set_defaults(func=_cmd_palette, is_async=False)
 
     lang = sub.add_parser("lang", help="idioma salvo / saved language")
     lang.add_argument("lang", choices=SUPPORTED)

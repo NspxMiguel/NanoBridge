@@ -3,6 +3,7 @@ import io
 import json
 
 import pytest
+from conftest import opaque_colours
 from PIL import Image
 
 from nanobridge import core
@@ -303,3 +304,49 @@ def test_a_retry_starts_a_fresh_conversation(tmp_path):
     asyncio.run(core.generate("a slime", backend=backend, out_dir=tmp_path, conversation="nb1_old"))
     assert seen[0] == "nb1_old"
     assert seen[1] is None
+
+
+def test_generate_with_a_palette_locks_the_colours(tmp_path):
+    backend = FakeBackend()
+    result = asyncio.run(
+        core.generate("x", backend=backend, out_dir=tmp_path, name="p", palette="gameboy")
+    )
+    with Image.open(result.paths[0]) as img:
+        used = opaque_colours(img)
+    allowed = set(core.palettes.resolve("gameboy"))
+    assert used <= allowed, used - allowed
+
+
+def test_a_bad_palette_fails_before_writing_anything(tmp_path):
+    """Nome errado tem que falhar de cara, não depois de gravar meia dúzia."""
+    backend = FakeBackend()
+    with pytest.raises(ValueError):
+        asyncio.run(core.generate("x", backend=backend, out_dir=tmp_path, palette="nao-existe"))
+    assert not list(tmp_path.glob("*.png"))
+
+
+def test_palette_from_image_round_trips_through_apply(tmp_path):
+    src = tmp_path / "src.png"
+    Image.open(io.BytesIO(png())).save(src)
+    colours = core.palette_from_image(src, count=4)
+    assert colours
+
+    other = tmp_path / "other.png"
+    Image.new("RGBA", (20, 20), (10, 200, 250, 255)).save(other)
+    out = core.apply_palette(other, [core.palettes.rgb_to_hex(c) for c in colours], out=tmp_path / "o.png")
+    with Image.open(out) as img:
+        used = opaque_colours(img)
+    assert used <= set(colours)
+
+
+def test_apply_palette_defaults_to_a_sibling_file(tmp_path):
+    src = tmp_path / "hero.png"
+    Image.open(io.BytesIO(png())).save(src)
+    out = core.apply_palette(src, "gameboy")
+    assert out.name == "hero-palette.png"
+    assert out.parent == tmp_path
+
+
+def test_apply_palette_rejects_a_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        core.apply_palette(tmp_path / "nope.png", "gameboy")
