@@ -1,6 +1,6 @@
 [project]
 name = "nanobridge"
-version = "0.1.0"
+version = "0.1.1"
 description = "Gemini's Nano Banana image generation, wired into any agent as a CLI and an MCP server."
 readme = "README.md"
 requires-python = ">=3.11"
