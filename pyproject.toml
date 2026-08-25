@@ -1,0 +1,30 @@
+[project]
+name = "nanobridge"
+version = "0.1.0"
+description = "Gemini's Nano Banana image generation, wired into any agent as a CLI and an MCP server."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Miguel Moretti" }]
+keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites"]
+
+dependencies = [
+  "gemini-webapi>=1.20.0",
+  "browser-cookie3>=0.20.1",
+  "pillow>=10.0.0",
+  "mcp>=1.2.0",
+  "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+nanobridge = "nanobridge.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nanobridge"]

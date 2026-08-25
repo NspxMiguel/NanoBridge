@@ -1,0 +1,326 @@
+"""CLI do NanoBridge. Tudo que o servidor MCP faz, dá para fazer aqui na mão."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from . import __version__, config, core, imaging
+from .backends import all_backends, pick
+from .errors import NanoBridgeError
+from .i18n import SUPPORTED, t
+
+
+def _common(parser: argparse.ArgumentParser, *, post: bool = True) -> None:
+    parser.add_argument("-o", "--out", type=Path, help="pasta de saída / output folder")
+    parser.add_argument("-n", "--name", help="nome base do arquivo / file stem")
+    parser.add_argument("-b", "--backend", choices=("web", "api"), help="canal / backend")
+    parser.add_argument("-m", "--model", help="modelo / model")
+    parser.add_argument("--open", action="store_true", help="abrir ao terminar / open when done")
+    parser.add_argument("--json", action="store_true", help="saída JSON / JSON output")
+    if post:
+        parser.add_argument("--transparent", action="store_true", help="fundo transparente")
+        parser.add_argument("--no-transparent", dest="transparent", action="store_false")
+        parser.add_argument("--trim", action="store_true", help="cortar moldura vazia")
+        parser.add_argument("--no-trim", dest="trim", action="store_false")
+        parser.add_argument("--size", type=int, help="lado máximo em px / max side in px")
+        parser.add_argument("--tolerance", type=int, default=24, help="tolerância de cor do fundo")
+        parser.set_defaults(transparent=None, trim=None)
+
+
+def _post_kwargs(args: argparse.Namespace) -> dict:
+    out: dict = {}
+    for key in ("transparent", "trim"):
+        value = getattr(args, key, None)
+        if value is not None:
+            out[key] = value
+    if getattr(args, "size", None):
+        out["size"] = args.size
+    if getattr(args, "tolerance", None) is not None:
+        out["tolerance"] = args.tolerance
+    return out
+
+
+def _run_kwargs(args: argparse.Namespace) -> dict:
+    kwargs = _post_kwargs(args)
+    kwargs.update(
+        out_dir=args.out,
+        backend_name=args.backend,
+        model=args.model,
+    )
+    if getattr(args, "name", None):
+        kwargs["name"] = args.name
+    if getattr(args, "conversation", None):
+        kwargs["conversation"] = args.conversation
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
+def _report(result: core.Generated, args: argparse.Namespace) -> None:
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {
+                    "paths": [str(p) for p in result.paths],
+                    "frames": [str(p) for p in result.frames],
+                    "gif": str(result.gif) if result.gif else None,
+                    "backend": result.backend,
+                    "model": result.model,
+                    "conversation": result.conversation,
+                    "text": result.text,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    for path in result.paths:
+        print(t("gen.saved", path=path))
+    if result.frames:
+        cols, rows = result.grid or ("?", "?")
+        print(t("sheet.sliced", n=len(result.frames), cols=cols, rows=rows, path=result.frames[0].parent))
+    if result.gif:
+        print(t("sheet.gif", path=result.gif))
+    if getattr(args, "open", False):
+        targets = [result.gif] if result.gif else result.paths
+        subprocess.run(["open", *[str(p) for p in targets]], check=False)
+
+
+async def _cmd_doctor(args: argparse.Namespace) -> int:
+    print(t("doctor.title"))
+    ready = False
+    for backend in all_backends():
+        ok = backend.available()
+        ready = ready or ok
+        mark = "OK " if ok else "-- "
+        state = t("doctor.ready") if ok else t("doctor.unavailable")
+        print(f"  {mark}{backend.name:4} {state:12} {backend.status()}")
+    if not ready:
+        print(t("doctor.hint_none"))
+        return 1
+    try:
+        backend = pick(args.backend)
+        quota = await backend.quota() if hasattr(backend, "quota") else {}
+        for label, value in quota.items():
+            print(f"  {t('doctor.quota')}: {label} {value}")
+        await backend.close()
+    except NanoBridgeError as exc:
+        print(f"  ! {exc}")
+        return 1
+    print(f"  {t('doctor.pillow_ok')}")
+    print(f"  {t('cfg.path', path=config.config_path())}")
+    return 0
+
+
+async def _cmd_gen(args: argparse.Namespace) -> int:
+    result = await core.generate(args.prompt, files=args.file or None, **_run_kwargs(args))
+    _report(result, args)
+    return 0
+
+
+async def _cmd_sprite(args: argparse.Namespace) -> int:
+    result = await core.sprite(args.subject, style=args.style, **_run_kwargs(args))
+    _report(result, args)
+    return 0
+
+
+async def _cmd_icon(args: argparse.Namespace) -> int:
+    result = await core.icon(args.subject, style=args.style, **_run_kwargs(args))
+    _report(result, args)
+    return 0
+
+
+async def _cmd_edit(args: argparse.Namespace) -> int:
+    result = await core.edit(args.image, args.prompt, **_run_kwargs(args))
+    _report(result, args)
+    return 0
+
+
+async def _cmd_sheet(args: argparse.Namespace) -> int:
+    result = await core.sheet(
+        args.subject,
+        grid=args.grid,
+        action=args.action,
+        style=args.style,
+        fps=args.fps,
+        frame_size=args.frame_size,
+        gif=not args.no_gif,
+        **_run_kwargs(args),
+    )
+    _report(result, args)
+    return 0
+
+
+def _cmd_slice(args: argparse.Namespace) -> int:
+    cols, rows = imaging.parse_grid(args.grid)
+    img = imaging.open_image(args.image)
+    if args.transparent:
+        img = imaging.make_transparent(img, tol=args.tolerance)
+    out = Path(args.out or Path(args.image).with_suffix("")).expanduser()
+    out.mkdir(parents=True, exist_ok=True)
+    stem = Path(args.image).stem
+    paths = []
+    for index, frame in enumerate(imaging.slice_sheet(img, cols, rows), start=1):
+        if args.size:
+            frame = imaging.fit(frame, args.size)
+        path = out / f"{stem}-{index:02d}.png"
+        frame.save(path)
+        paths.append(path)
+    print(t("sheet.sliced", n=len(paths), cols=cols, rows=rows, path=out))
+    if not args.no_gif:
+        gif = imaging.save_gif([imaging.open_image(p) for p in paths], out / f"{stem}.gif", fps=args.fps)
+        print(t("sheet.gif", path=gif))
+    return 0
+
+
+def _cmd_cut(args: argparse.Namespace) -> int:
+    """Pós-processamento puro: nenhuma rede, serve para imagem de qualquer origem."""
+    img = imaging.open_image(args.image)
+    if args.transparent:
+        img = imaging.make_transparent(img, tol=args.tolerance)
+    if args.trim:
+        img = imaging.trim(img, tol=args.tolerance)
+    if args.size:
+        img = imaging.fit(img, args.size, pad=False)
+    out = Path(args.out) if args.out else Path(args.image).with_name(f"{Path(args.image).stem}-cut.png")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out)
+    print(t("gen.saved", path=out))
+    return 0
+
+
+def _cmd_lang(args: argparse.Namespace) -> int:
+    if args.lang not in SUPPORTED:
+        print(t("cfg.lang_bad", lang=args.lang), file=sys.stderr)
+        return 2
+    path = config.set_language(args.lang)
+    print(t("cfg.lang_set", lang=args.lang))
+    print(t("cfg.path", path=path))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="nanobridge",
+        description="Nano Banana (Gemini) image generation for agents — CLI + MCP.",
+    )
+    parser.add_argument("-V", "--version", action="version", version=f"nanobridge {__version__}")
+    parser.add_argument("--lang", choices=SUPPORTED, help="idioma desta execução / language for this run")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    doctor = sub.add_parser("doctor", help="o que está pronto / what is ready")
+    doctor.add_argument("-b", "--backend", choices=("web", "api"))
+    doctor.set_defaults(func=_cmd_doctor, is_async=True)
+
+    gen = sub.add_parser("gen", help="imagem livre / free-form image")
+    gen.add_argument("prompt")
+    gen.add_argument("-f", "--file", action="append", help="imagem de referência / reference image")
+    gen.add_argument("--conversation", help="continuar uma conversa / continue a conversation")
+    _common(gen)
+    gen.set_defaults(func=_cmd_gen, is_async=True)
+
+    sprite = sub.add_parser("sprite", help="sprite de jogo / game sprite")
+    sprite.add_argument("subject")
+    sprite.add_argument("-s", "--style", default="pixel", help="pixel, flat, cartoon, 3d, realistic, sketch")
+    _common(sprite)
+    sprite.set_defaults(func=_cmd_sprite, is_async=True)
+
+    icon = sub.add_parser("icon", help="ícone / app icon")
+    icon.add_argument("subject")
+    icon.add_argument("-s", "--style", default="flat")
+    _common(icon)
+    icon.set_defaults(func=_cmd_icon, is_async=True)
+
+    edit = sub.add_parser("edit", help="editar uma imagem / edit an image")
+    edit.add_argument("image")
+    edit.add_argument("prompt")
+    edit.add_argument("--conversation")
+    _common(edit)
+    edit.set_defaults(func=_cmd_edit, is_async=True)
+
+    sheet = sub.add_parser("sheet", help="folha de sprites + GIF / sprite sheet + GIF")
+    sheet.add_argument("subject")
+    sheet.add_argument("-g", "--grid", default="4x2")
+    sheet.add_argument("-a", "--action", default="a simple looping idle animation")
+    sheet.add_argument("-s", "--style", default="pixel")
+    sheet.add_argument("--fps", type=int, default=10)
+    sheet.add_argument("--frame-size", type=int)
+    sheet.add_argument("--no-gif", action="store_true")
+    _common(sheet)
+    sheet.set_defaults(func=_cmd_sheet, is_async=True)
+
+    slice_ = sub.add_parser("slice", help="cortar folha local / slice a local sheet")
+    slice_.add_argument("image")
+    slice_.add_argument("-g", "--grid", default="4x2")
+    slice_.add_argument("-o", "--out", type=Path)
+    slice_.add_argument("--size", type=int)
+    slice_.add_argument("--fps", type=int, default=10)
+    slice_.add_argument("--transparent", action="store_true")
+    slice_.add_argument("--tolerance", type=int, default=24)
+    slice_.add_argument("--no-gif", action="store_true")
+    slice_.set_defaults(func=_cmd_slice, is_async=False)
+
+    cut = sub.add_parser("cut", help="recortar / limpar fundo local")
+    cut.add_argument("image")
+    cut.add_argument("-o", "--out")
+    cut.add_argument("--transparent", action="store_true", default=True)
+    cut.add_argument("--no-transparent", dest="transparent", action="store_false")
+    cut.add_argument("--trim", action="store_true", default=True)
+    cut.add_argument("--no-trim", dest="trim", action="store_false")
+    cut.add_argument("--size", type=int)
+    cut.add_argument("--tolerance", type=int, default=24)
+    cut.set_defaults(func=_cmd_cut, is_async=False)
+
+    lang = sub.add_parser("lang", help="idioma salvo / saved language")
+    lang.add_argument("lang", choices=SUPPORTED)
+    lang.set_defaults(func=_cmd_lang, is_async=False)
+
+    mcp = sub.add_parser("mcp", help="servidor MCP (stdio) / MCP server (stdio)")
+    mcp.set_defaults(func=None, is_async=False)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    config.apply_saved_language()
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.lang:
+        from . import i18n
+
+        i18n.set_language(args.lang)
+
+    if args.command == "mcp":
+        from .mcp_server import run
+
+        run()
+        return 0
+
+    try:
+        if args.is_async:
+            return asyncio.run(_with_cleanup(args))
+        return args.func(args)
+    except NanoBridgeError as exc:
+        print(f"nanobridge: {exc}", file=sys.stderr)
+        return 1
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"nanobridge: {exc}", file=sys.stderr)
+        return 2
+
+
+async def _with_cleanup(args: argparse.Namespace) -> int:
+    from .backends.web import WebBackend
+
+    try:
+        return await args.func(args)
+    finally:
+        # A sessão web mantém uma tarefa de refresh viva; sem fechar, o processo
+        # do CLI não termina.
+        await WebBackend().close()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
