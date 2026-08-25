@@ -204,3 +204,102 @@ def test_build_atlas_name_is_sanitised(tmp_path):
     Image.new("RGBA", (10, 10), (1, 1, 1, 255)).save(src)
     result = core.build_atlas([src], out_dir=tmp_path / "out", name="../../escaped")
     assert result.path.parent == tmp_path / "out"
+
+
+class FlakyBackend(FakeBackend):
+    """Devolve texto nas primeiras `fail_times` chamadas, imagem depois."""
+
+    def __init__(self, fail_times: int, text: str = "Sure, here is what X means:"):
+        super().__init__()
+        self.fail_times = fail_times
+        self.fail_text = text
+        self.prompts: list[str] = []
+
+    async def generate(self, prompt, files=None, model=None, conversation=None):
+        self.prompts.append(prompt)
+        if len(self.prompts) <= self.fail_times:
+            return Result(images=[], text=self.fail_text, backend=self.name)
+        return Result(images=[png()], text="", backend=self.name, conversation="c1")
+
+
+def test_a_text_reply_is_retried_with_a_nudge(tmp_path):
+    """Foi o modo de falha mais comum na prática: o modelo responde conversa."""
+    backend = FlakyBackend(fail_times=1)
+    result = asyncio.run(core.generate("a slime", backend=backend, out_dir=tmp_path))
+    assert result.paths, "a segunda tentativa tinha que ter salvo a imagem"
+    assert len(backend.prompts) == 2
+    assert backend.prompts[0] == "a slime"
+    assert "not with text" in backend.prompts[1]
+    assert backend.prompts[1].endswith("a slime")
+
+
+def test_the_nudge_escalates_rather_than_repeating(tmp_path):
+    backend = FlakyBackend(fail_times=2)
+    asyncio.run(core.generate("a slime", backend=backend, out_dir=tmp_path))
+    assert len(backend.prompts) == 3
+    assert backend.prompts[1] != backend.prompts[2]
+    assert "IMAGE REQUEST" in backend.prompts[2]
+
+
+def test_retries_give_up_and_report_the_last_text(tmp_path):
+    backend = FlakyBackend(fail_times=99, text="Here is a paragraph about slimes.")
+    with pytest.raises(NoImageError) as err:
+        asyncio.run(core.generate("a slime", backend=backend, out_dir=tmp_path, retries=2))
+    assert len(backend.prompts) == 3
+    assert "paragraph about slimes" in str(err.value)
+
+
+def test_a_real_refusal_stops_immediately_instead_of_burning_quota(tmp_path):
+    """Cada tentativa custa créditos do plano dele: insistir numa recusa é caro
+    e inútil."""
+    backend = FlakyBackend(fail_times=99, text="I can't create that image.")
+    with pytest.raises(NoImageError):
+        asyncio.run(core.generate("something", backend=backend, out_dir=tmp_path, retries=5))
+    assert len(backend.prompts) == 1, "recusa não pode virar seis chamadas"
+
+
+def test_retries_zero_means_one_attempt(tmp_path):
+    backend = FlakyBackend(fail_times=99)
+    with pytest.raises(NoImageError):
+        asyncio.run(core.generate("a slime", backend=backend, out_dir=tmp_path, retries=0))
+    assert len(backend.prompts) == 1
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("I can't create that image.", True),
+        ("That goes against the content policy.", True),
+        ("Não posso criar essa imagem.", True),
+        ("Here is your image!", False),
+        ("The letter X has several meanings.", False),
+        ("", False),
+        # O modelo repete o pedido na resposta, então uma palavra comum na lista
+        # de recusas desliga o retry justamente nos prompts normais. Um primeiro
+        # rascunho tinha "against" e "policy" soltos e reprovava estes três:
+        ("a knight leaning against a stone wall", False),
+        ("an insurance policy document on a desk", False),
+        ("two swords crossed against a shield", False),
+        # A resposta real que motivou tudo isso — pergunta, não recusa:
+        ("It looks like your message was just a single letter. How can I help?", False),
+    ],
+)
+def test_refusal_detection(text, expected):
+    assert core.looks_like_a_refusal(text) is expected
+
+
+def test_a_retry_starts_a_fresh_conversation(tmp_path):
+    """Uma conversa que já entendeu errado tende a insistir no erro."""
+    backend = FlakyBackend(fail_times=1)
+    seen = []
+
+    original = backend.generate
+
+    async def spy(prompt, files=None, model=None, conversation=None):
+        seen.append(conversation)
+        return await original(prompt, files=files, model=model, conversation=conversation)
+
+    backend.generate = spy
+    asyncio.run(core.generate("a slime", backend=backend, out_dir=tmp_path, conversation="nb1_old"))
+    assert seen[0] == "nb1_old"
+    assert seen[1] is None

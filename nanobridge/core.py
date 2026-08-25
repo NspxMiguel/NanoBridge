@@ -125,6 +125,94 @@ class Generated:
     grid: tuple[int, int] | None = None
 
 
+# Quando o modelo responde texto em vez de imagem, há dois motivos bem
+# diferentes e só um deles vale insistir:
+#
+#   - ele leu o pedido como conversa ("x" → explica o que é a letra X). Um
+#     empurrão dizendo "isto é um pedido de imagem" resolve quase sempre.
+#   - ele recusou de propósito (política de conteúdo, direitos). Insistir aqui
+#     não muda nada e queima cota — cada tentativa custa créditos do plano dele.
+#
+# Por isso a recusa é detectada e encerra na hora, em vez de virar três
+# tentativas idênticas.
+#
+# As frases são deliberadamente longas. Um primeiro rascunho tinha "against" e
+# "policy" soltos, e isso transforma "a knight leaning against a stone wall" numa
+# recusa — o modelo costuma repetir o pedido na resposta, então uma palavra comum
+# na lista desliga o retry justamente nos prompts normais.
+_REFUSALS = (
+    "can't create",
+    "cannot create",
+    "can't generate",
+    "cannot generate",
+    "can't help with",
+    "cannot help with",
+    "won't be able to",
+    "unable to create",
+    "unable to generate",
+    "i'm not able to",
+    "goes against",
+    "violates",
+    "content policy",
+    "safety policy",
+    "not allowed to",
+    "não posso criar",
+    "nao posso criar",
+    "não posso gerar",
+    "nao posso gerar",
+    "não consigo criar",
+    "nao consigo criar",
+)
+
+#: Empurrão progressivo: o primeiro é gentil, o segundo é explícito. Nada de
+#: repetir o mesmo prompt — se ele não bastou da primeira vez, não basta na
+#: segunda.
+_NUDGES = (
+    "Generate an image for this. Reply with the image itself, not with text.\n\n",
+    "IMAGE REQUEST. Output exactly one generated image and no explanation, "
+    "no description, no questions.\n\n",
+)
+
+
+def looks_like_a_refusal(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(phrase in lowered for phrase in _REFUSALS)
+
+
+async def _generate_with_retry(
+    backend: Backend,
+    prompt: str,
+    *,
+    files: list[Path] | None,
+    model: str | None,
+    conversation: str | None,
+    retries: int,
+):
+    """Pede a imagem, e insiste quando a resposta veio como texto por engano.
+
+    Devolve o `Result` da primeira tentativa que trouxe imagem. Se todas
+    falharem, levanta `NoImageError` com o texto da ÚLTIMA tentativa — que é o
+    que explica melhor por que não deu.
+    """
+    attempt_prompt = prompt
+    last_text = ""
+    for attempt in range(retries + 1):
+        result = await backend.generate(
+            attempt_prompt, files=files, model=model, conversation=conversation
+        )
+        if result.images:
+            return result
+        last_text = result.text or ""
+        if looks_like_a_refusal(last_text):
+            break
+        if attempt < retries:
+            attempt_prompt = _NUDGES[min(attempt, len(_NUDGES) - 1)] + prompt
+            # Uma conversa que já entendeu errado tende a insistir no erro; a
+            # tentativa seguinte começa limpa.
+            conversation = None
+    raise NoImageError(last_text)
+
+
 async def _run(
     prompt: str,
     *,
@@ -139,15 +227,21 @@ async def _run(
     trim: bool = False,
     size: int | None = None,
     tolerance: int = 24,
+    retries: int = 2,
 ) -> Generated:
     # A conferência do arquivo mora aqui, antes de escolher canal e antes de
     # subir o cliente do Gemini (que custa uma ida à rede): caminho errado tem
     # que falhar de graça, e todo canal herda a mesma checagem.
     checked = [existing_path(f) for f in (files or [])]
     chosen = backend or pick(backend_name)
-    result = await chosen.generate(prompt, files=checked or None, model=model, conversation=conversation)
-    if not result.images:
-        raise NoImageError(result.text)
+    result = await _generate_with_retry(
+        chosen,
+        prompt,
+        files=checked or None,
+        model=model,
+        conversation=conversation,
+        retries=retries,
+    )
 
     target = Path(out_dir or default_out_dir()).expanduser()
     target.mkdir(parents=True, exist_ok=True)
