@@ -126,6 +126,30 @@ for one run.
   break it. The `api` backend is the fallback that stays put.
 - Generated images carry Google's SynthID watermark.
 
+## Credit
+
+NanoBridge is not the only project that reaches Nano Banana through a browser
+session — [gemini-webapi-mcp](https://github.com/AndyShaman/gemini-webapi-mcp)
+by [AndyShaman](https://github.com/AndyShaman) got there first, in February
+2026, on the same idea and largely the same stack
+([gemini-webapi](https://github.com/HanaokaYuzu/Gemini-API) +
+`browser-cookie3` + `mcp`). Two things here exist because that project showed
+they were worth having:
+
+- `NANOBRIDGE_COOKIE_FILE` — point at a browser cookie store outside the default
+  location, for a profile that lives somewhere unusual.
+- `nanobridge_reset` — drop a stale session on purpose, right after signing back
+  in to Gemini, instead of waiting for the next generation to fail and report it.
+
+What NanoBridge does that it does not: the sprite pipeline (border-connected
+background removal, sheet slicing, GIF assembly with a transparent palette
+index), the prompt templates for sprite/icon/sheet, a CLI with subcommands
+alongside the MCP server, and Portuguese as a first-class language throughout.
+What it does that NanoBridge does not: 2x upscale via a dedicated RPC (though
+`gemini-webapi` already fetches full-size images by a different route — see
+[Limits worth knowing](#limits-worth-knowing)), watermark removal, video/URL
+analysis, and open-ended text chat.
+
 ## License
 
 AGPL-3.0-or-later. This is not the default choice — it's inherited: NanoBridge
