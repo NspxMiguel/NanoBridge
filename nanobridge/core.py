@@ -16,7 +16,7 @@ from pathlib import Path
 from . import atlas_formats, imaging, palettes
 from .backends import Backend, pick
 from .config import default_out_dir
-from .errors import NanoBridgeError, NoImageError
+from .errors import NoImageError
 from .i18n import t
 
 # Estes moldes existem porque prompt cru rende imagem bonita e sprite inútil:
