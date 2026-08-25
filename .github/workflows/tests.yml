@@ -1,0 +1,58 @@
+name: tests
+
+# Roda no push e no PR. Nao ha nada aqui que precise de segredo ou de rede: os
+# testes usam um canal falso de proposito, para que a suite nao dependa da
+# sessao do Gemini nem gaste cota.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # O piso e o teto do que o pyproject promete. Quebrar o piso e o erro
+        # facil de cometer: sintaxe nova passa no Mac e falha em quem instalou
+        # com o Python mais velho que ainda e aceito.
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Instalar
+        run: uv pip install --system --python ${{ matrix.python }} -e ".[dev]" ruff
+      - name: Lint
+        run: ruff check nanobridge tests
+      - name: Testes
+        run: python -m pytest tests -q
+
+  package:
+    # Instalar do tarball e diferente de instalar do diretorio: e assim que o
+    # cask do Homebrew instala, e e onde um arquivo que faltou no pacote aparece.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Construir e instalar o pacote
+        run: |
+          uv build
+          uv venv /tmp/pkg
+          uv pip install --python /tmp/pkg/bin/python dist/*.whl
+          /tmp/pkg/bin/nanobridge --version
+          /tmp/pkg/bin/nanobridge --help > /dev/null
+      - name: A skill e a pagina vao junto do repositorio
+        run: test -f skill/SKILL.md && test -f docs/index.html

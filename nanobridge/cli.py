@@ -59,6 +59,21 @@ def _run_kwargs(args: argparse.Namespace) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+def _open_files(paths: list[Path]) -> None:
+    """Abre no visualizador do sistema. Nunca derruba o comando por isso.
+
+    O pacote declara Python 3.11+ e não macOS: fora do Mac o `open` nem existe,
+    e a imagem já está salva — falhar aqui trocaria o resultado por um erro.
+    """
+    opener = {"darwin": ["open"], "win32": ["cmd", "/c", "start", ""]}.get(sys.platform, ["xdg-open"])
+    for path in paths:
+        try:
+            subprocess.run([*opener, str(path)], check=False)
+        except OSError:
+            print(f"nanobridge: {t('gen.saved', path=path)}", file=sys.stderr)
+            return
+
+
 def _report(result: core.Generated, args: argparse.Namespace) -> None:
     if getattr(args, "json", False):
         print(
@@ -86,7 +101,7 @@ def _report(result: core.Generated, args: argparse.Namespace) -> None:
         print(t("sheet.gif", path=result.gif))
     if getattr(args, "open", False):
         targets = [result.gif] if result.gif else result.paths
-        subprocess.run(["open", *[str(p) for p in targets]], check=False)
+        _open_files(targets)
 
 
 async def _cmd_doctor(args: argparse.Namespace) -> int:
