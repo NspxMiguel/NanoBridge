@@ -118,3 +118,38 @@ def test_api_other_errors_name_the_backend(monkeypatch):
 def test_signed_out_detection(text, expected):
     """Sessão morta responde em texto, sem erro de rede: é o texto que denuncia."""
     assert web._sounds_signed_out(text) is expected
+
+
+def test_expired_session_drops_the_shared_client(monkeypatch):
+    """O servidor MCP vive dias: sem soltar o cliente, entrar de novo no Gemini
+    não adiantaria nada até reiniciar o processo."""
+    import asyncio
+
+    from nanobridge.backends.base import Result
+    from nanobridge.errors import SessionExpiredError
+
+    class DeadOutput:
+        images: list = []
+        text = "You might be signed out or image creation may not be available."
+
+    class FakeChat:
+        metadata = ["c_1"]
+
+        async def send_message(self, *a, **k):
+            return DeadOutput()
+
+    class FakeClient:
+        quotas: dict = {}
+
+        def start_chat(self, **kw):
+            return FakeChat()
+
+        async def close(self):
+            return None
+
+    backend = web.WebBackend()
+    web.WebBackend._client = FakeClient()
+    assert web.WebBackend._client is not None
+    with pytest.raises(SessionExpiredError):
+        asyncio.run(backend.generate("x"))
+    assert web.WebBackend._client is None, "o cliente morto continuou em cache"

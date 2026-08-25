@@ -16,6 +16,7 @@ from . import imaging
 from .backends import Backend, pick
 from .config import default_out_dir
 from .errors import NoImageError
+from .i18n import t
 
 # Estes moldes existem porque prompt cru rende imagem bonita e sprite inútil:
 # sem pedir fundo chapado e enquadramento único, vem cena com sombra e chão.
@@ -58,6 +59,19 @@ def slugify(text: str, fallback: str = "nanobridge") -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", normalised).strip("-").lower()
     slug = re.sub(r"-{2,}", "-", slug)
     return (slug[:48] or fallback).strip("-") or fallback
+
+
+def existing_path(path: str | Path) -> Path:
+    """Caminho de entrada que precisa existir, com a mensagem traduzida.
+
+    Deixar o Pillow falhar dá a mensagem do sistema operacional, em inglês,
+    dizendo "No such file or directory" — enquanto o resto da ferramenta fala a
+    língua do usuário e dá o caminho já expandido.
+    """
+    resolved = Path(path).expanduser()
+    if not resolved.exists():
+        raise FileNotFoundError(t("err.file_missing", path=str(resolved)))
+    return resolved
 
 
 def safe_stem(name: str, fallback: str = "nanobridge") -> str:

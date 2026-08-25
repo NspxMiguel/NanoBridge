@@ -117,6 +117,7 @@ class WebBackend(Backend):
                 await client.init(timeout=120, auto_close=False, auto_refresh=True, verbose=False)
             except Exception as exc:  # sessão morta é o caso comum e tem conserto claro
                 raise SessionExpiredError() from exc
+            self._cookie_source = cookies.get("_source")
             WebBackend._client = client
             return client
 
@@ -182,6 +183,10 @@ class WebBackend(Backend):
         # este teste o usuário levava "o modelo não devolveu imagem nenhuma",
         # que esconde a única coisa acionável — entrar de novo no Gemini.
         if not output.images and _sounds_signed_out(output.text or ""):
+            # Largar o cliente é o que permite consertar sem reiniciar: o
+            # servidor MCP vive por dias, e depois que a pessoa entra de novo no
+            # Gemini a próxima chamada tem que reler o cookie novo do navegador.
+            await self.close()
             raise SessionExpiredError()
 
         images: list[bytes] = []
@@ -202,10 +207,13 @@ class WebBackend(Backend):
         )
 
     async def close(self) -> None:
+        """Solta o cliente compartilhado. Seguro de chamar mais de uma vez."""
         client = WebBackend._client
         WebBackend._client = None
         if client is not None:
             try:
                 await client.close()
             except Exception:
+                # Fechar é limpeza: um erro aqui não pode virar o erro que o
+                # usuário vê no lugar do motivo real.
                 pass

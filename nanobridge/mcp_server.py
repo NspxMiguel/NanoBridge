@@ -25,7 +25,6 @@ from . import config, core, imaging
 from .backends import all_backends, pick
 from .core import STYLES
 from .errors import NanoBridgeError
-from .i18n import t
 
 mcp = _Server("nanobridge")
 
@@ -48,25 +47,19 @@ def handled(fn):
     async def async_wrapper(*args, **kwargs):
         try:
             return await fn(*args, **kwargs)
-        except (NanoBridgeError, FileNotFoundError, ValueError) as exc:
+        except (NanoBridgeError, OSError, ValueError) as exc:
             raise ToolError(str(exc)) from exc
 
     @functools.wraps(fn)
     def sync_wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except (NanoBridgeError, FileNotFoundError, ValueError) as exc:
+        except (NanoBridgeError, OSError, ValueError) as exc:
             raise ToolError(str(exc)) from exc
 
     return async_wrapper if inspect.iscoroutinefunction(fn) else sync_wrapper
 
 
-def _existing(path: str) -> Path:
-    """Caminho que precisa existir — falha aqui dá mensagem, falha no Pillow dá pilha."""
-    resolved = Path(path).expanduser()
-    if not resolved.exists():
-        raise FileNotFoundError(t("err.file_missing", path=str(resolved)))
-    return resolved
 
 
 def _preview(path: Path) -> ImageContent:
@@ -269,7 +262,7 @@ def cut_image(
 
     No network and no quota — use it on an image that came from anywhere.
     """
-    source = _existing(image)
+    source = core.existing_path(image)
     img = imaging.open_image(source)
     if transparent:
         img = imaging.make_transparent(img, tol=tolerance)
@@ -295,7 +288,7 @@ def slice_sheet(
     gif: bool = True,
 ) -> list[TextContent | ImageContent]:
     """Slice an existing sheet into frames and optionally build a GIF. Local only."""
-    source = _existing(image)
+    source = core.existing_path(image)
     cols, rows = imaging.parse_grid(grid)
     img = imaging.open_image(source)
     if transparent:

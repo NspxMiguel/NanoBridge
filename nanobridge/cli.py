@@ -155,8 +155,9 @@ async def _cmd_sheet(args: argparse.Namespace) -> int:
 
 
 def _cmd_slice(args: argparse.Namespace) -> int:
+    source = core.existing_path(args.image)
     cols, rows = imaging.parse_grid(args.grid)
-    img = imaging.open_image(args.image)
+    img = imaging.open_image(source)
     if args.transparent:
         img = imaging.make_transparent(img, tol=args.tolerance)
     out = Path(args.out or Path(args.image).with_suffix("")).expanduser()
@@ -178,7 +179,7 @@ def _cmd_slice(args: argparse.Namespace) -> int:
 
 def _cmd_cut(args: argparse.Namespace) -> int:
     """Pós-processamento puro: nenhuma rede, serve para imagem de qualquer origem."""
-    img = imaging.open_image(args.image)
+    img = imaging.open_image(core.existing_path(args.image))
     if args.transparent:
         img = imaging.make_transparent(img, tol=args.tolerance)
     if args.trim:
@@ -306,7 +307,12 @@ def main(argv: list[str] | None = None) -> int:
     except NanoBridgeError as exc:
         print(f"nanobridge: {exc}", file=sys.stderr)
         return 1
-    except (FileNotFoundError, ValueError) as exc:
+    except ValueError as exc:
+        print(f"nanobridge: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        # Caminho que não existe, que já existe como arquivo, que é pasta, sem
+        # permissão: tudo isso é o mundo dizendo não, não é defeito do programa.
         print(f"nanobridge: {exc}", file=sys.stderr)
         return 2
 
