@@ -9,7 +9,8 @@ authors = [{ name = "Miguel Moretti" }]
 keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites"]
 
 dependencies = [
-  "gemini-webapi>=1.20.0",
+  # 2.0 mudou a forma de client.quotas e de start_chat; o codigo depende das duas.
+  "gemini-webapi>=2.0.0",
   "browser-cookie3>=0.20.1",
   "pillow>=10.0.0",
   "mcp>=1.2.0",

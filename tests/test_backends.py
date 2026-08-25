@@ -40,3 +40,65 @@ def test_env_cookies_win_over_the_browser(monkeypatch):
 def test_api_key_read_from_env(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     assert api._key() == "k"
+
+
+class _Response:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+
+def _fake_http(payload, status=200):
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Response(payload, status)
+
+    return Client
+
+
+def test_api_quota_error_is_readable_not_a_stack_trace(monkeypatch):
+    """429 do plano gratuito e o caso comum: tem que virar mensagem, nao traceback."""
+    import asyncio
+
+    import httpx
+
+    from nanobridge.errors import NanoBridgeError, QuotaError
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kw: _fake_http({"error": {"status": "RESOURCE_EXHAUSTED", "message": "no quota"}}, 429)(),
+    )
+    with pytest.raises(QuotaError) as err:
+        asyncio.run(api.ApiBackend().generate("x"))
+    assert isinstance(err.value, NanoBridgeError)
+    assert "billing" in str(err.value) or "faturamento" in str(err.value)
+
+
+def test_api_other_errors_name_the_backend(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    from nanobridge.errors import BackendError
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kw: _fake_http({"error": {"status": "INVALID_ARGUMENT", "message": "bad model"}}, 400)(),
+    )
+    with pytest.raises(BackendError) as err:
+        asyncio.run(api.ApiBackend().generate("x"))
+    assert "api" in str(err.value)
+    assert "bad model" in str(err.value)

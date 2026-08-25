@@ -27,3 +27,17 @@ class SessionExpiredError(NanoBridgeError):
 class NoImageError(NanoBridgeError):
     def __init__(self, text: str = "") -> None:
         super().__init__(t("gen.none", text=(text or "—")[:300]))
+
+
+class QuotaError(NanoBridgeError):
+    """Cota estourada — o caso mais comum do canal api, e tem conserto conhecido."""
+
+    def __init__(self) -> None:
+        super().__init__(t("err.quota"))
+
+
+class BackendError(NanoBridgeError):
+    """Qualquer outra recusa do canal, já legível."""
+
+    def __init__(self, backend: str, detail: str) -> None:
+        super().__init__(t("err.backend", backend=backend, detail=detail))

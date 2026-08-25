@@ -93,7 +93,14 @@ class ApiBackend(Backend):
             )
         payload = response.json()
         if "error" in payload:
-            raise RuntimeError(f"{payload['error'].get('status')}: {payload['error'].get('message', '')[:300]}")
+            from ..errors import BackendError, QuotaError
+
+            status = str(payload["error"].get("status") or response.status_code)
+            if status == "RESOURCE_EXHAUSTED" or response.status_code == 429:
+                # Não é "tente de novo mais tarde": no plano gratuito a cota de
+                # imagem é zero e continua zero. Dizer isso poupa a espera.
+                raise QuotaError()
+            raise BackendError(self.name, f"{status}: {payload['error'].get('message', '')[:200]}")
 
         images: list[bytes] = []
         text = ""

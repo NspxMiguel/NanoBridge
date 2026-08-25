@@ -65,6 +65,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "the Gemini session expired. Open https://gemini.google.com in Chrome to refresh it.",
     },
     "err.file_missing": {"pt": "arquivo não encontrado: {path}", "en": "file not found: {path}"},
+    "err.quota": {
+        "pt": (
+            "a API do Gemini recusou por cota: no plano gratuito os modelos de imagem têm cota "
+            "zero, e só liberam com faturamento ativo (e aí cobram por imagem). "
+            "O canal 'web' não tem esse problema — rode 'nanobridge doctor'."
+        ),
+        "en": (
+            "the Gemini API refused on quota: on the free tier the image models have zero quota, "
+            "and only unlock with active billing (which then charges per image). "
+            "The 'web' backend does not have this problem — run 'nanobridge doctor'."
+        ),
+    },
+    "err.backend": {"pt": "o canal {backend} recusou: {detail}", "en": "the {backend} backend refused: {detail}"},
     "err.bad_grid": {
         "pt": "grade inválida: use algo como 4x2",
         "en": "invalid grid: use something like 4x2",
