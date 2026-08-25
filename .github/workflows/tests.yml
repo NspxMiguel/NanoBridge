@@ -32,12 +32,17 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      # `uv venv --python X` baixa o interpretador quando o runner nao tem: o
+      # runner do GitHub so traz uma versao, e --system esbarra na protecao de
+      # "externally managed environment" do Ubuntu.
+      - name: Ambiente
+        run: uv venv --python ${{ matrix.python }} .venv
       - name: Instalar
-        run: uv pip install --system --python ${{ matrix.python }} -e ".[dev]" ruff
+        run: uv pip install --python .venv/bin/python -e ".[dev]" ruff
       - name: Lint
-        run: ruff check nanobridge tests
+        run: .venv/bin/ruff check nanobridge tests
       - name: Testes
-        run: python -m pytest tests -q
+        run: .venv/bin/python -m pytest tests -q
 
   package:
     # Instalar do tarball e diferente de instalar do diretorio: e assim que o
@@ -50,7 +55,7 @@ jobs:
       - name: Construir e instalar o pacote
         run: |
           uv build
-          uv venv /tmp/pkg
+          uv venv --python 3.12 /tmp/pkg
           uv pip install --python /tmp/pkg/bin/python dist/*.whl
           /tmp/pkg/bin/nanobridge --version
           /tmp/pkg/bin/nanobridge --help > /dev/null
