@@ -350,3 +350,30 @@ def test_apply_palette_defaults_to_a_sibling_file(tmp_path):
 def test_apply_palette_rejects_a_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
         core.apply_palette(tmp_path / "nope.png", "gameboy")
+
+
+def test_build_atlas_writes_every_requested_format(tmp_path):
+    src = tmp_path / "a.png"
+    Image.open(io.BytesIO(png())).save(src)
+    result = core.build_atlas(
+        [src], out_dir=tmp_path / "out", name="t", formats=["nanobridge", "godot", "css"]
+    )
+    assert set(result.manifests) == {"nanobridge", "godot", "css"}
+    assert all(p.exists() for p in result.manifests.values())
+    assert result.manifest_path == result.manifests["nanobridge"]
+
+
+def test_build_atlas_rejects_a_bad_format_before_writing(tmp_path):
+    src = tmp_path / "a.png"
+    Image.open(io.BytesIO(png())).save(src)
+    out = tmp_path / "out"
+    with pytest.raises(ValueError):
+        core.build_atlas([src], out_dir=out, name="t", formats=["nanobridge", "unreal"])
+    assert not list(out.glob("*.json")), "não pode deixar manifesto pela metade"
+
+
+def test_build_atlas_defaults_to_the_project_format(tmp_path):
+    src = tmp_path / "a.png"
+    Image.open(io.BytesIO(png())).save(src)
+    result = core.build_atlas([src], out_dir=tmp_path / "out", name="t")
+    assert list(result.manifests) == ["nanobridge"]

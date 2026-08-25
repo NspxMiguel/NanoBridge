@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import __version__, config, core, imaging, palettes
+from . import __version__, atlas_formats, config, core, imaging, palettes
 from .backends import all_backends, pick
 from .errors import NanoBridgeError
 from .i18n import SUPPORTED, t
@@ -227,7 +227,12 @@ def _cmd_atlas(args: argparse.Namespace) -> int:
     if args.dir:
         images += sorted(Path(args.dir).glob("*.png"))
     result = core.build_atlas(
-        images, out_dir=args.out, name=args.name, padding=args.padding, max_width=args.max_width
+        images,
+        out_dir=args.out,
+        name=args.name,
+        padding=args.padding,
+        max_width=args.max_width,
+        formats=args.format,
     )
     if args.json:
         print(
@@ -235,6 +240,7 @@ def _cmd_atlas(args: argparse.Namespace) -> int:
                 {
                     "path": str(result.path),
                     "manifest": str(result.manifest_path),
+                    "manifests": {k: str(v) for k, v in result.manifests.items()},
                     "sprites": [
                         {"name": e.name, "x": e.x, "y": e.y, "w": e.w, "h": e.h} for e in result.entries
                     ],
@@ -365,6 +371,13 @@ def build_parser() -> argparse.ArgumentParser:
     atlas.add_argument("-n", "--name")
     atlas.add_argument("--padding", type=int, default=2)
     atlas.add_argument("--max-width", type=int, default=2048)
+    atlas.add_argument(
+        "-f",
+        "--format",
+        action="append",
+        choices=atlas_formats.FORMATS,
+        help="formato do manifesto, repetível / manifest format, repeatable",
+    )
     atlas.add_argument("--json", action="store_true")
     atlas.set_defaults(func=_cmd_atlas, is_async=False)
 

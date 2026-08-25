@@ -267,6 +267,23 @@ async def edit_image(
 
 @mcp.tool()
 @handled
+def list_atlas_formats() -> str:
+    """The manifest formats `pack_atlas` can write, and what reads each one."""
+    return json.dumps(
+        {
+            "nanobridge": "this project's own shape: a flat list of named rectangles",
+            "phaser": "TexturePacker JSON hash — Phaser, PixiJS, Cocos",
+            "texturepacker": "same as phaser, under the tool's name",
+            "godot": "a .tres resource with one AtlasTexture per sprite",
+            "css": "one CSS class per sprite, with background-position",
+            "aseprite": "Aseprite's JSON array shape",
+        },
+        indent=2,
+    )
+
+
+@mcp.tool()
+@handled
 def list_palettes() -> str:
     """The built-in palettes available to `palette` arguments, with their colours."""
     lines = []
@@ -402,6 +419,7 @@ def pack_atlas(
     name: str | None = None,
     padding: int = 2,
     max_width: int = 2048,
+    formats: list[str] | None = None,
 ) -> list[TextContent | ImageContent]:
     """Pack loose sprite PNGs into one atlas image plus a JSON manifest.
 
@@ -411,11 +429,23 @@ def pack_atlas(
     local, no quota, works on images from anywhere. `sprites` in the manifest
     keeps the input order; each entry's `name` is the source filename without
     its extension.
+
+    `formats` writes the manifest for real engines instead of only this
+    project's own shape — any of: nanobridge, phaser, texturepacker, godot,
+    css, aseprite. Ask for several and each gets its own file.
     """
-    result = core.build_atlas(images, out_dir=out_dir, name=name, padding=padding, max_width=max_width)
+    result = core.build_atlas(
+        images,
+        out_dir=out_dir,
+        name=name,
+        padding=padding,
+        max_width=max_width,
+        formats=formats,
+    )
     summary = {
         "path": str(result.path),
         "manifest": str(result.manifest_path),
+        "manifests": {k: str(v) for k, v in result.manifests.items()},
         "sprites": [{"name": e.name, "x": e.x, "y": e.y, "w": e.w, "h": e.h} for e in result.entries],
     }
     return [

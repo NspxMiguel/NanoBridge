@@ -6,14 +6,13 @@ O CLI e o servidor MCP são casca fina em cima daqui; toda regra de verdade
 
 from __future__ import annotations
 
-import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import imaging, palettes
+from . import atlas_formats, imaging, palettes
 from .backends import Backend, pick
 from .config import default_out_dir
 from .errors import NoImageError
@@ -385,11 +384,12 @@ async def sheet(
 
 @dataclass
 class AtlasResult:
-    """Onde o atlas e o manifesto ficaram, e o que o manifesto diz."""
+    """Onde o atlas e os manifestos ficaram, e o que eles dizem."""
 
     path: Path
     manifest_path: Path
     entries: list[imaging.AtlasEntry] = field(default_factory=list)
+    manifests: dict[str, Path] = field(default_factory=dict)
 
 
 def build_atlas(
@@ -399,6 +399,7 @@ def build_atlas(
     name: str | None = None,
     padding: int = 2,
     max_width: int = 2048,
+    formats: list[str] | None = None,
 ) -> AtlasResult:
     """Empacota sprites já existentes num atlas + manifesto JSON.
 
@@ -420,18 +421,25 @@ def build_atlas(
     image_path = unique_path(target, stem, ".png")
     canvas.save(image_path)
 
-    manifest_path = image_path.with_suffix(".json")
-    manifest = {
-        "image": image_path.name,
-        "size": {"w": canvas.width, "h": canvas.height},
-        "sprites": [
-            {"name": entry.name, "x": entry.x, "y": entry.y, "w": entry.w, "h": entry.h}
-            for entry in entries
-        ],
-    }
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    # Formatos são validados antes de qualquer escrita: um nome errado no fim da
+    # lista não pode deixar metade dos manifestos no disco.
+    wanted = list(formats or ["nanobridge"])
+    for fmt in wanted:
+        atlas_formats.suffix_for(fmt)
 
-    return AtlasResult(path=image_path, manifest_path=manifest_path, entries=entries)
+    manifests: dict[str, Path] = {}
+    taken: set[Path] = set()
+    for fmt in wanted:
+        manifests[fmt] = atlas_formats.write(
+            fmt, entries, image_path, canvas.width, canvas.height, taken=taken
+        )
+
+    return AtlasResult(
+        path=image_path,
+        manifest_path=manifests[wanted[0]],
+        entries=entries,
+        manifests=manifests,
+    )
 
 
 def palette_from_image(image: str | Path, count: int = 16) -> list[imaging.Rgb]:
