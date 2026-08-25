@@ -41,9 +41,18 @@ fi
 say "installed: $("$VENV/bin/nanobridge" --version)"
 
 # --- cli on PATH ------------------------------------------------------------
-mkdir -p "$BIN_DIR"
-ln -sf "$VENV/bin/nanobridge" "$BIN_DIR/nanobridge"
-say "cli: $BIN_DIR/nanobridge"
+# Uma instalacao pelo Homebrew ja publicou o comando em HOMEBREW_PREFIX/bin.
+# Criar um segundo link aqui deixaria duas copias no PATH, e a que ganha depende
+# da ordem do PATH — que e exatamente o tipo de coisa que confunde depois.
+existing="$(command -v nanobridge 2>/dev/null || true)"
+if [ -n "$existing" ] && [ "$existing" != "$BIN_DIR/nanobridge" ] && [ "$existing" != "$VENV/bin/nanobridge" ]; then
+  say "cli: $existing ja esta no PATH (Homebrew?) — nao vou criar um segundo link"
+  say "     este ambiente fica em $VENV/bin/nanobridge"
+else
+  mkdir -p "$BIN_DIR"
+  ln -sf "$VENV/bin/nanobridge" "$BIN_DIR/nanobridge"
+  say "cli: $BIN_DIR/nanobridge"
+fi
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) say "note: $BIN_DIR is not on your PATH" ;;
