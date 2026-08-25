@@ -113,6 +113,45 @@
   </div>
 </section>
 
+<section id="cast">
+  <h2><span lang="en">A whole cast that matches</span><span lang="pt">Um elenco que combina</span></h2>
+  <p class="sub">
+    <span lang="en">This is the one thing here that nothing else does.</span>
+    <span lang="pt">Isto é a única coisa aqui que nenhum outro faz.</span>
+  </p>
+  <div class="sheet">
+    <img src="assets/cast.png" alt="four pixel-art characters sharing one palette">
+  </div>
+  <p>
+    <span lang="en">Generate characters one at a time and they do not match — the model picks a slightly different green each time, and the set looks assembled from separate sessions. <code>cast</code> generates them together, reads one palette from the whole group, locks everyone to it, and packs the result into an atlas with the manifests you asked for.</span>
+    <span lang="pt">Gerar personagens um a um dá um elenco que não combina — o modelo escolhe um verde ligeiramente diferente a cada vez, e o conjunto parece montado de sessões separadas. O <code>cast</code> gera todos juntos, tira uma paleta do grupo inteiro, trava todo mundo nela e empacota num atlas com os manifestos pedidos.</span>
+  </p>
+<pre><code>nanobridge cast "a knight with a sword" "a hooded rogue" "an old wizard" \
+  --size 128 -f godot -f css</code></pre>
+  <p>
+    <span lang="en">The four above came out of exactly that, in one command.</span>
+    <span lang="pt">Os quatro acima saíram exatamente disso, num comando.</span>
+  </p>
+</section>
+
+<section id="palettes">
+  <h2><span lang="en">Palettes, and real pixel art</span><span lang="pt">Paletas, e pixel art de verdade</span></h2>
+  <div class="shots">
+    <div class="shot">
+      <img src="assets/pixelart.png" width="160" alt="a slime rebuilt at 40 art pixels, locked to the PICO-8 palette">
+      <span>--pixels 40 --zoom 8 --palette pico8</span>
+    </div>
+  </div>
+  <p>
+    <span lang="en">Eight built-in palettes (PICO-8, Game Boy, CGA, C64, Sweetie 16, Endesga 32 and two greyscales), plus <code>.hex</code> files and inline colour lists. Matching is perceptual, not raw RGB — it has to be: in plain RGB the grey <code>#5F574F</code> sits closer to a mid green than PICO-8's own green does, so a green slime came out grey.</span>
+    <span lang="pt">Oito paletas embutidas (PICO-8, Game Boy, CGA, C64, Sweetie 16, Endesga 32 e duas em cinza), mais arquivos <code>.hex</code> e listas de cor na linha de comando. O casamento é perceptual, não RGB cru — e tem que ser: em RGB puro o cinza <code>#5F574F</code> fica mais perto de um verde médio do que o próprio verde da PICO-8, e um slime verde saía cinza.</span>
+  </p>
+  <p>
+    <span lang="en"><code>--size</code> scales the image; <code>--pixels</code> rebuilds it at an exact number of art pixels, so the grid closes and every art pixel is one pixel. Downscaling 2816px straight to 128px gives blocks of 4, 5 and 6 mixed together — it reads as pixel art until somebody zooms in.</span>
+    <span lang="pt"><code>--size</code> redimensiona a imagem; <code>--pixels</code> reconstrói com um número exato de pixels de arte, então a grade fecha e cada pixel da arte é um pixel. Reduzir 2816px direto para 128px dá blocos de 4, 5 e 6 misturados — parece pixel art até alguém dar zoom.</span>
+  </p>
+</section>
+
 <section id="why">
   <h2><span lang="en">Why not just call the API</span><span lang="pt">Por que não usar a API</span></h2>
   <p class="sub">
@@ -188,6 +227,8 @@ nanobridge atlas hero.png villain.png item.png -o game/atlas</code></pre>
     <div class="card"><h3>generate_image</h3><p><span lang="en">Free-form, with reference images and multi-turn edits.</span><span lang="pt">Livre, com imagem de referência e edição em várias rodadas.</span></p></div>
     <div class="card"><h3>edit_image</h3><p><span lang="en">Change any image on disk in plain language.</span><span lang="pt">Muda qualquer imagem do disco em linguagem normal.</span></p></div>
     <div class="card"><h3>cut_image / slice_sheet</h3><p><span lang="en">Local post-processing. No network, no quota.</span><span lang="pt">Pós-processamento local. Sem rede, sem cota.</span></p></div>
+    <div class="card"><h3>generate_cast</h3><p><span lang="en">A whole set of characters, one shared palette, packed.</span><span lang="pt">Um elenco inteiro, uma paleta só, empacotado.</span></p></div>
+    <div class="card"><h3>extract_palette / apply_palette</h3><p><span lang="en">Take a palette off art you like, put it on everything else.</span><span lang="pt">Tira a paleta de uma arte boa e põe no resto.</span></p></div>
     <div class="card"><h3>pack_atlas</h3><p><span lang="en">Loose sprites into one sheet plus a manifest. Local, no quota.</span><span lang="pt">Sprites soltos numa folha só, mais manifesto. Local, sem cota.</span></p></div>
     <div class="card"><h3>nanobridge_status</h3><p><span lang="en">Which backend is live and what quota is left.</span><span lang="pt">Qual canal está de pé e quanta cota sobrou.</span></p></div>
     <div class="card"><h3>nanobridge_reset</h3><p><span lang="en">Drop a stale session right after signing back in.</span><span lang="pt">Solta uma sessão morta assim que você entra de novo.</span></p></div>

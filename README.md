@@ -68,6 +68,50 @@ nanobridge sheet "a green slime" --grid 4x2 \
   --action "squash down and stretch back up, a bouncy idle loop" --fps 10
 ```
 
+### A whole cast at once
+
+```bash
+nanobridge cast "a knight with a sword" "a hooded rogue" "an old wizard" \
+  --size 128 -f godot -f css
+```
+
+Generating characters one at a time gives a cast that does not match — the model
+picks a slightly different green each time. `cast` generates them together, reads
+one palette from the group, locks everyone to it, and packs the result into an
+atlas with the manifests you asked for. A subject that fails does not lose the
+others.
+
+### Palettes
+
+```bash
+nanobridge palettes                                   # what is built in
+nanobridge sprite "a slime" --palette pico8           # lock to a known palette
+nanobridge palette hero.png -n 16 -o game.hex         # take a palette from art
+nanobridge sprite "a goblin" --palette game.hex       # and reuse it
+nanobridge palette photo.jpg --apply gameboy          # rewrite an existing file
+```
+
+Built in: `pico8`, `gameboy`, `gameboy-pocket`, `cga`, `c64`, `sweetie16`,
+`endesga32`, `grayscale8`. Anywhere a palette is accepted you can also pass a
+`.hex` file (one `#RRGGBB` per line) or an inline `#RRGGBB,#RRGGBB` list.
+
+Matching is perceptual, not raw RGB. It has to be: in plain RGB the grey
+`#5F574F` is closer to a mid green than PICO-8's own green is, so a green slime
+came out grey.
+
+### Real pixel art
+
+```bash
+nanobridge sprite "a slime" --pixels 32 --zoom 8
+nanobridge cut art.png --pixels 48 --zoom 6 --palette pico8
+```
+
+`--size` scales the image; `--pixels` rebuilds it at an exact number of art
+pixels, so the grid closes and every art pixel is one pixel. `--zoom` then scales
+back up by a whole number, grid intact. Downscaling from 2816px straight to 128px
+gives blocks of 4, 5 and 6 pixels mixed together — it reads as pixel art until
+somebody zooms in.
+
 Sheets are generated, sliced into frames, and assembled into a looping GIF with
 the transparency preserved — GIF has no alpha channel, so a palette index is
 reserved for the empty pixels.
@@ -88,9 +132,14 @@ instead of naming files one by one.
 
 ## Use it from an agent
 
-The MCP server exposes `generate_image`, `generate_sprite`,
-`generate_sprite_sheet`, `generate_icon`, `edit_image`, `cut_image`,
-`slice_sheet`, `pack_atlas`, `nanobridge_status` and `nanobridge_reset`.
+The MCP server exposes `generate_cast`, `generate_sprite`,
+`generate_sprite_sheet`, `generate_image`, `generate_icon`, `edit_image`,
+`cut_image`, `slice_sheet`, `pack_atlas`, `list_atlas_formats`,
+`list_palettes`, `extract_palette`, `apply_palette`, `nanobridge_status` and
+`nanobridge_reset`.
+
+`generate_cast` is the one to reach for when the task is "a set of characters"
+rather than one image — it is the whole coherence story in a single call.
 
 Every generating tool returns the image **back to the model**, downscaled to a
 512px preview, alongside the paths on disk. That is the point: an agent that
@@ -117,6 +166,8 @@ so the pipeline is part of the tool rather than an afterthought:
 - **Slicing is geometric.** The grid asked for in the prompt is the grid used to
   cut, and the individual frames are written out — that is where you see whether
   the model actually obeyed.
+- **Palette matching is perceptual**, and resizing is premultiplied so a sprite
+  edge does not pick up a halo from whatever was behind it.
 
 ## Languages
 

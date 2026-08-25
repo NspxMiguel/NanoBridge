@@ -11,9 +11,10 @@ of billing per call.
 
 Two ways in, same engine:
 
-- **MCP tools** (`generate_sprite`, `generate_sprite_sheet`, `generate_image`,
-  `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`, `pack_atlas`,
-  `nanobridge_status`, `nanobridge_reset`).
+- **MCP tools** (`generate_cast`, `generate_sprite`, `generate_sprite_sheet`,
+  `generate_image`, `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`,
+  `pack_atlas`, `list_atlas_formats`, `list_palettes`, `extract_palette`,
+  `apply_palette`, `nanobridge_status`, `nanobridge_reset`).
   Every generating tool returns the picture back to you — look at it before
   calling the job done.
 - **CLI** (`nanobridge …`) for anything scripted, batched, or run from a Makefile.
@@ -29,6 +30,17 @@ crisper at every size, recolourable with CSS, and diffable in git. A generated
 raster icon is bigger, blurrier when scaled, and cannot follow a theme. The
 generator earns its place when the drawing is beyond what you would hand-write.
 
+## Asked for more than one sprite? Use `generate_cast`
+
+This is the single most important thing to get right here. Characters generated
+one at a time do not match — the model picks a slightly different green each
+time, and the set looks assembled from separate sessions. `generate_cast` takes
+the whole list, generates them together, reads one palette from the group, locks
+everyone to it, and packs an atlas. It is also faster, because nothing waits in
+line.
+
+Reach for `generate_sprite` when there is genuinely one thing to draw.
+
 ## Doing it
 
 ```bash
@@ -38,6 +50,8 @@ nanobridge sheet "a green slime" --grid 4x2 \
   --action "squash down and stretch back up, a bouncy idle loop" --fps 10
 nanobridge icon "a compass rose" --style flat
 nanobridge edit hero.png "make the sky stormy, keep everything else"
+nanobridge cast "a knight" "a rogue" "a wizard" -f godot      # one coherent set
+nanobridge palettes                                          # what is built in
 nanobridge cut photo.jpg --transparent --trim --size 256      # local, no quota
 nanobridge slice sheet.png --grid 6x1 --size 96                # local, no quota
 nanobridge atlas hero.png villain.png item.png -o game/atlas   # local, no quota
@@ -50,6 +64,14 @@ subject animated across identical frames.
 
 Styles: `pixel` (default for sprites), `flat`, `cartoon`, `3d`, `realistic`,
 `sketch` — or any free-text description.
+
+Palettes: `pico8`, `gameboy`, `gameboy-pocket`, `cga`, `c64`, `sweetie16`,
+`endesga32`, `grayscale8`, or a `.hex` file, or an inline `#RRGGBB,#RRGGBB`
+list. `extract_palette` turns art you already like into one of those files.
+
+For pixel art, prefer `--pixels N` over `--size N`: `--size` scales the image,
+`--pixels` rebuilds it at exactly N art pixels so the grid actually closes.
+`--zoom` scales it back up by a whole number without breaking that.
 
 ## What makes the output usable
 
