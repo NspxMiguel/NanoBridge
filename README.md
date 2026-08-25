@@ -40,19 +40,20 @@ Nothing to paste, nothing to buy.
 ## Install
 
 ```bash
-git clone https://github.com/NspxMiguel/NanoBridge.git
-cd NanoBridge && ./install.sh
+gh repo clone NspxMiguel/NanoBridge ~/Projects/NanoBridge
+cd ~/Projects/NanoBridge && ./install.sh
 ```
 
 The installer builds a virtualenv, puts `nanobridge` on `PATH`, registers the MCP
-server with Claude Code, and installs the agent skill. Homebrew:
-
-```bash
-brew install --cask nspxmiguel/tap/nanobridge
-```
+server with Claude Code, and installs the agent skill. Run it again to upgrade;
+it never creates a second `nanobridge` on `PATH`.
 
 Requirements: Python 3.11+, and a browser signed in to
 <https://gemini.google.com>.
+
+> This repository is private, so `gh` (authenticated) is the way to clone it and
+> there is no Homebrew cask: a cask downloads a source tarball over plain HTTPS,
+> which a private repository answers with a 404.
 
 ## Use it from the shell
 

@@ -145,14 +145,11 @@
 <section id="install">
   <h2><span lang="en">Install</span><span lang="pt">Instalar</span></h2>
   <p class="sub">
-    <span lang="en">Homebrew, or clone and run the installer. Needs Python 3.11+ and a browser signed in to gemini.google.com.</span>
-    <span lang="pt">Homebrew, ou clonar e rodar o instalador. Precisa de Python 3.11+ e um navegador logado no gemini.google.com.</span>
+    <span lang="en">Clone and run the installer. Needs Python 3.11+ and a browser signed in to gemini.google.com. The repository is private, so cloning goes through an authenticated <code>gh</code>.</span>
+    <span lang="pt">Clonar e rodar o instalador. Precisa de Python 3.11+ e um navegador logado no gemini.google.com. O repositório é privado, então o clone passa por um <code>gh</code> autenticado.</span>
   </p>
-<pre><code>brew install --cask nspxmiguel/tap/nanobridge
-
-# <span lang="en">or</span><span lang="pt">ou</span>
-git clone https://github.com/NspxMiguel/NanoBridge.git
-cd NanoBridge &amp;&amp; ./install.sh</code></pre>
+<pre><code>gh repo clone NspxMiguel/NanoBridge ~/Projects/NanoBridge
+cd ~/Projects/NanoBridge &amp;&amp; ./install.sh</code></pre>
   <p>
     <span lang="en">Either way you get the <code>nanobridge</code> command, the MCP server registered with Claude Code, and the agent skill installed.</span>
     <span lang="pt">Dos dois jeitos você fica com o comando <code>nanobridge</code>, o servidor MCP registrado no Claude Code e a skill do agente instalada.</span>
