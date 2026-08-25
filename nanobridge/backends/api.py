@@ -73,8 +73,6 @@ class ApiBackend(Backend):
         parts: list[dict] = [{"text": prompt}]
         for f in files or []:
             path = Path(f).expanduser()
-            if not path.exists():
-                raise FileNotFoundError(t("err.file_missing", path=str(path)))
             parts.append(
                 {
                     "inlineData": {

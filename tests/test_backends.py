@@ -125,7 +125,6 @@ def test_expired_session_drops_the_shared_client(monkeypatch):
     não adiantaria nada até reiniciar o processo."""
     import asyncio
 
-    from nanobridge.backends.base import Result
     from nanobridge.errors import SessionExpiredError
 
     class DeadOutput:

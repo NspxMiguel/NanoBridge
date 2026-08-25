@@ -9,6 +9,7 @@ conta já tem, com a cota que já está paga.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -163,9 +164,6 @@ class WebBackend(Backend):
                 chat = None
 
         paths = [str(Path(f).expanduser()) for f in (files or [])]
-        for p in paths:
-            if not Path(p).exists():
-                raise FileNotFoundError(t("err.file_missing", path=p))
 
         kwargs: dict[str, object] = {}
         if model:
@@ -211,9 +209,7 @@ class WebBackend(Backend):
         client = WebBackend._client
         WebBackend._client = None
         if client is not None:
-            try:
+            # Fechar é limpeza: um erro aqui não pode virar o erro que o usuário
+            # vê no lugar do motivo real.
+            with contextlib.suppress(Exception):
                 await client.close()
-            except Exception:
-                # Fechar é limpeza: um erro aqui não pode virar o erro que o
-                # usuário vê no lugar do motivo real.
-                pass

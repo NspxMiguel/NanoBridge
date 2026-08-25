@@ -25,8 +25,14 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Gemini cookies found in {browser}",
     },
     "doctor.cookies_missing": {
-        "pt": "nenhum cookie do Gemini no navegador — entre em gemini.google.com e tente de novo",
-        "en": "no Gemini cookies in the browser — sign in at gemini.google.com and retry",
+        "pt": (
+            "nenhum cookie do Gemini no navegador — "
+            "entre em gemini.google.com e tente de novo"
+        ),
+        "en": (
+            "no Gemini cookies in the browser — "
+            "sign in at gemini.google.com and retry"
+        ),
     },
     "doctor.apikey_found": {
         "pt": "GEMINI_API_KEY presente (só funciona com faturamento ativo)",
@@ -38,7 +44,10 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "doctor.quota": {"pt": "cota da conta", "en": "account quota"},
     "doctor.used": {"pt": "{n} créditos ({pct}% usado)", "en": "{n} credits ({pct}% used)"},
-    "doctor.pillow_ok": {"pt": "pós-processamento de imagem disponível", "en": "image post-processing available"},
+    "doctor.pillow_ok": {
+        "pt": "pós-processamento de imagem disponível",
+        "en": "image post-processing available",
+    },
     "doctor.hint_none": {
         "pt": "Nenhum canal pronto. Abra gemini.google.com no Chrome, entre na conta e rode de novo.",
         "en": "No backend ready. Open gemini.google.com in Chrome, sign in, and run again.",
@@ -77,7 +86,10 @@ STRINGS: dict[str, dict[str, str]] = {
             "The 'web' backend does not have this problem — run 'nanobridge doctor'."
         ),
     },
-    "err.backend": {"pt": "o canal {backend} recusou: {detail}", "en": "the {backend} backend refused: {detail}"},
+    "err.backend": {
+        "pt": "o canal {backend} recusou: {detail}",
+        "en": "the {backend} backend refused: {detail}",
+    },
     "err.bad_grid": {
         "pt": "grade inválida: use algo como 4x2",
         "en": "invalid grid: use something like 4x2",

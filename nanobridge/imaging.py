@@ -92,10 +92,10 @@ def background_mask(img: Image.Image, tol: int = 24) -> Image.Image:
     while queue:
         x, y = queue.popleft()
         for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            if 0 <= nx < sw and 0 <= ny < sh and not seen[ny * sw + nx]:
-                if _close_enough(px[nx, ny], bg, tol):
-                    seen[ny * sw + nx] = 1
-                    queue.append((nx, ny))
+            inside = 0 <= nx < sw and 0 <= ny < sh
+            if inside and not seen[ny * sw + nx] and _close_enough(px[nx, ny], bg, tol):
+                seen[ny * sw + nx] = 1
+                queue.append((nx, ny))
 
     mask = Image.frombytes("L", (sw, sh), bytes(255 if v else 0 for v in seen))
     return mask if (sw, sh) == (w, h) else mask.resize((w, h), Image.BILINEAR)

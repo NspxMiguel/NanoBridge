@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .base import Backend, Result
 from .api import ApiBackend
+from .base import Backend, Result
 from .web import WebBackend
 
 #: Ordem de preferência. A web vem primeiro porque usa o plano que ele já paga;
@@ -28,4 +28,4 @@ def pick(preferred: str | None = None) -> Backend:
     raise NoBackendError()
 
 
-__all__ = ["Backend", "Result", "WebBackend", "ApiBackend", "all_backends", "pick", "BACKENDS"]
+__all__ = ["BACKENDS", "ApiBackend", "Backend", "Result", "WebBackend", "all_backends", "pick"]

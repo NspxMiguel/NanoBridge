@@ -43,7 +43,10 @@ ICON_TEMPLATE = (
 )
 
 STYLES = {
-    "pixel": "Pixel art, low resolution look, chunky pixels, limited palette, crisp 1px black outline, no anti-aliasing",
+    "pixel": (
+        "Pixel art, low resolution look, chunky pixels, limited palette, "
+        "crisp 1px black outline, no anti-aliasing"
+    ),
     "flat": "Flat vector illustration, bold clean shapes, limited palette, no gradients, no texture",
     "cartoon": "Clean 2D cartoon illustration, bold outlines, cel shading",
     "3d": "Soft 3D render, clay-like material, gentle studio lighting",
@@ -136,8 +139,12 @@ async def _run(
     size: int | None = None,
     tolerance: int = 24,
 ) -> Generated:
+    # A conferência do arquivo mora aqui, antes de escolher canal e antes de
+    # subir o cliente do Gemini (que custa uma ida à rede): caminho errado tem
+    # que falhar de graça, e todo canal herda a mesma checagem.
+    checked = [existing_path(f) for f in (files or [])]
     chosen = backend or pick(backend_name)
-    result = await chosen.generate(prompt, files=files, model=model, conversation=conversation)
+    result = await chosen.generate(prompt, files=checked or None, model=model, conversation=conversation)
     if not result.images:
         raise NoImageError(result.text)
 
@@ -244,7 +251,7 @@ async def sheet(
         if transparent_path != source:
             source.unlink(missing_ok=True)
         source = transparent_path
-        generated.paths = [source] + generated.paths[1:]
+        generated.paths = [source, *generated.paths[1:]]
 
     # A pasta de quadros leva o nome do arquivo que saiu, não o pedido: rodar de
     # novo com uma grade menor deixaria quadros da rodada anterior lá dentro,

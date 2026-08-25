@@ -1,6 +1,5 @@
 """Casos-limite do pós-processamento — os que quebram implementação ingênua."""
 
-from pathlib import Path
 
 import pytest
 from PIL import Image, ImageDraw

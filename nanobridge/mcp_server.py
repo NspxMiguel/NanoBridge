@@ -326,7 +326,8 @@ async def nanobridge_status() -> str:
     """Which backend is live, and how much quota the account has left."""
     lines = []
     for backend in all_backends():
-        lines.append(f"{backend.name}: {'ready' if backend.available() else 'unavailable'} — {backend.status()}")
+        state = "ready" if backend.available() else "unavailable"
+        lines.append(f"{backend.name}: {state} — {backend.status()}")
     try:
         chosen = pick()
         lines.append(f"chosen: {chosen.name}")
