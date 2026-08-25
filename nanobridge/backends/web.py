@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 from ..conversation import decode as decode_conversation
@@ -44,12 +46,16 @@ def find_cookies() -> dict[str, str] | None:
         import browser_cookie3
     except ImportError:  # pragma: no cover - dependência declarada
         return None
+    # Perfil fora do padrão (outro usuário do sistema, Chrome instalado por
+    # gestor de pacote diferente, snapshot copiado de outra máquina): o caminho
+    # do cookie store vai direto pro leitor em vez de a ferramenta adivinhar.
+    cookie_file = os.environ.get("NANOBRIDGE_COOKIE_FILE") or None
     for name in _BROWSERS:
         loader = getattr(browser_cookie3, name, None)
         if loader is None:
             continue
         try:
-            jar = loader(domain_name=".google.com")
+            jar = loader(domain_name=".google.com", cookie_file=cookie_file)
         except Exception:
             # Navegador não instalado, perfil trancado, sem permissão — o
             # próximo da lista pode ter o cookie.
@@ -80,6 +86,21 @@ _SIGNED_OUT = (
 def _sounds_signed_out(text: str) -> bool:
     lowered = text.lower()
     return any(phrase in lowered for phrase in _SIGNED_OUT)
+
+
+# NANOBRIDGE_DEBUG_TIMING=1 loga cada etapa — é o que diferencia "está lento" de
+# "travou": cliente subindo, mensagem indo, imagem baixando são coisas
+# diferentes, e só uma delas costuma ser o gargalo de verdade.
+_DEBUG_TIMING = os.environ.get("NANOBRIDGE_DEBUG_TIMING") == "1"
+
+
+def _stage(label: str, start: float) -> float:
+    """stderr, nunca stdout: o servidor MCP fala JSON-RPC em stdout, e uma
+    linha solta ali quebra o protocolo — foi assim que este bug apareceu."""
+    now = time.monotonic()
+    if _DEBUG_TIMING:
+        print(f"[nanobridge timing] {label}: {now - start:.2f}s", file=sys.stderr)
+    return now
 
 
 class WebBackend(Backend):
@@ -152,7 +173,9 @@ class WebBackend(Backend):
         model: str | None = None,
         conversation: str | None = None,
     ) -> Result:
+        t0 = time.monotonic()
         client = await self._get_client()
+        t0 = _stage("client ready", t0)
         chat = None
         metadata_in = decode_conversation(conversation)
         if metadata_in:
@@ -175,6 +198,7 @@ class WebBackend(Backend):
             session = client.start_chat(**kwargs)
             output = await session.send_message(prompt, files=paths or None)
             metadata = session.metadata
+        t0 = _stage("message sent", t0)
 
         # Sessão inválida não estoura no init: o endpoint aceita a conversa e o
         # modelo responde "you might be signed out" em texto, sem imagem. Sem
@@ -195,6 +219,7 @@ class WebBackend(Backend):
                 for index, image in enumerate(output.images):
                     saved = await image.save(path=tmp, filename=f"img_{index}", verbose=False)
                     images.append(Path(saved).read_bytes())
+            _stage(f"{len(images)} image(s) downloaded", t0)
 
         return Result(
             images=images,
@@ -213,3 +238,16 @@ class WebBackend(Backend):
             # vê no lugar do motivo real.
             with contextlib.suppress(Exception):
                 await client.close()
+
+    async def reset(self) -> bool:
+        """Solta a sessão em cache de propósito, sem esperar uma chamada falhar.
+
+        `close()` já faz isso — este método existe para ser um comando
+        explícito (`nanobridge doctor --reset`, a ferramenta MCP
+        `nanobridge_status(reset=True)`): depois de entrar de novo no Gemini no
+        navegador, não há por que gastar uma geração só para descobrir que a
+        sessão antiga ainda estava em memória.
+        """
+        had_client = WebBackend._client is not None
+        await self.close()
+        return had_client

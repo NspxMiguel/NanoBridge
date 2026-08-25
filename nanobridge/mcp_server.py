@@ -25,6 +25,7 @@ from . import config, core, imaging
 from .backends import all_backends, pick
 from .core import STYLES
 from .errors import NanoBridgeError
+from .i18n import t
 
 mcp = _Server("nanobridge")
 
@@ -339,6 +340,23 @@ async def nanobridge_status() -> str:
     lines.append(f"styles: {', '.join(STYLES)}")
     lines.append(f"default out dir: {config.default_out_dir()}")
     return "\n".join(lines)
+
+
+@mcp.tool()
+@handled
+async def nanobridge_reset() -> str:
+    """Drop the cached Gemini web session.
+
+    Call this right after signing back in to gemini.google.com in the browser.
+    The web session is otherwise cached for the whole life of this server —
+    which can be days — so without an explicit reset, a fresh sign-in only
+    takes effect after the next generation fails and reports an expired
+    session.
+    """
+    from .backends.web import WebBackend
+
+    dropped = await WebBackend().reset()
+    return t("reset.done") if dropped else t("reset.nothing")
 
 
 def run() -> None:

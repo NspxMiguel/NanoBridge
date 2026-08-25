@@ -54,6 +54,14 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     # --- geração
     "gen.working": {"pt": "gerando…", "en": "generating…"},
+    "reset.done": {
+        "pt": "sessão solta — a próxima chamada relê o cookie do navegador",
+        "en": "session dropped — the next call rereads the browser cookie",
+    },
+    "reset.nothing": {
+        "pt": "nenhuma sessão em memória — nada para soltar",
+        "en": "no session in memory — nothing to drop",
+    },
     "gen.saved": {"pt": "salvo em {path}", "en": "saved to {path}"},
     "gen.none": {
         "pt": "o modelo não devolveu imagem nenhuma. Resposta em texto: {text}",

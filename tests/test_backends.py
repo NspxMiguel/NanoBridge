@@ -152,3 +152,44 @@ def test_expired_session_drops_the_shared_client(monkeypatch):
     with pytest.raises(SessionExpiredError):
         asyncio.run(backend.generate("x"))
     assert web.WebBackend._client is None, "o cliente morto continuou em cache"
+
+
+def test_cookie_file_override_is_passed_to_every_loader(monkeypatch):
+    """NANOBRIDGE_COOKIE_FILE existe pra quem tem o navegador num lugar que o
+    padrão de fábrica não acha — perfil de outro usuário, cópia de outra máquina."""
+    monkeypatch.setenv("NANOBRIDGE_COOKIE_FILE", "/tmp/custom-cookies.sqlite")
+    seen = []
+
+    class FakeBrowserCookie3:
+        def chrome(self, domain_name, cookie_file=None):
+            seen.append(cookie_file)
+            return []
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "browser_cookie3", FakeBrowserCookie3())
+    web.find_cookies()
+    assert seen == ["/tmp/custom-cookies.sqlite"]
+
+
+@pytest.mark.asyncio
+async def test_reset_drops_a_cached_client_and_reports_it():
+    web.WebBackend._client = object()
+    assert (await web.WebBackend().reset()) is True
+    assert web.WebBackend._client is None
+
+
+@pytest.mark.asyncio
+async def test_reset_on_an_empty_cache_reports_nothing_to_drop():
+    web.WebBackend._client = None
+    assert (await web.WebBackend().reset()) is False
+
+
+def test_debug_timing_never_touches_stdout(monkeypatch, capsys):
+    """O MCP server fala JSON-RPC em stdout — uma linha de log ali quebra o
+    protocolo. Isso já foi um bug real: _stage() usava print() puro."""
+    monkeypatch.setattr(web, "_DEBUG_TIMING", True)
+    web._stage("test stage", 0.0)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "test stage" in captured.err

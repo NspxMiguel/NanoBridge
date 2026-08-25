@@ -136,3 +136,15 @@ def test_slice_sheet_bad_grid_is_a_message(tmp_path):
 async def test_name_from_the_model_cannot_escape_out_dir(fake, tmp_path):
     parts = await mcp_server.generate_sprite("a slime", out_dir=str(tmp_path), name="../../escaped")
     assert all(str(tmp_path) in p for p in payload(parts)["paths"])
+
+
+@pytest.mark.asyncio
+async def test_nanobridge_reset_reports_whether_anything_dropped():
+    from nanobridge.backends.web import WebBackend
+
+    WebBackend._client = None
+    assert "nothing" in (await mcp_server.nanobridge_reset()).lower()
+
+    WebBackend._client = object()
+    assert "dropped" in (await mcp_server.nanobridge_reset()).lower()
+    assert WebBackend._client is None
