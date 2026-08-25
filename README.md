@@ -1,5 +1,7 @@
 # NanoBridge
 
+[![tests](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml/badge.svg)](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml)
+
 Gemini's **Nano Banana** image generation, wired into agents as an **MCP server**
 and a **CLI** — using the Gemini plan the account already has, not a per-image
 bill.
