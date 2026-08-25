@@ -85,7 +85,12 @@ def _preview(path: Path) -> ImageContent:
     )
 
 
-def _respond(result: core.Generated, note: str = "") -> list[TextContent | ImageContent]:
+def _respond(result: core.Generated) -> list[TextContent | ImageContent]:
+    """Uma resposta, um formato: o bloco de texto é sempre JSON puro.
+
+    Prefixar uma linha solta antes do JSON obrigava quem lê a saber de antemão
+    qual ferramenta respondeu; o que era nota virou campo.
+    """
     summary = {
         "paths": [str(p) for p in result.paths],
         "frames": [str(p) for p in result.frames],
@@ -93,8 +98,10 @@ def _respond(result: core.Generated, note: str = "") -> list[TextContent | Image
         "backend": result.backend,
         "conversation": result.conversation,
     }
+    if result.grid:
+        summary["grid"] = f"{result.grid[0]}x{result.grid[1]}"
     out: list[TextContent | ImageContent] = [
-        TextContent(type="text", text=(note + "\n" if note else "") + json.dumps(summary, ensure_ascii=False))
+        TextContent(type="text", text=json.dumps(summary, ensure_ascii=False))
     ]
     for path in result.paths:
         out.append(_preview(path))
@@ -215,7 +222,7 @@ async def generate_sprite_sheet(
         frame_size=frame_size,
         **_kwargs(out_dir, name, backend, None),
     )
-    return _respond(result, note=f"grid={grid}")
+    return _respond(result)
 
 
 @mcp.tool()
