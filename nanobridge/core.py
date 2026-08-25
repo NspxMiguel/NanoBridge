@@ -6,6 +6,7 @@ O CLI e o servidor MCP são casca fina em cima daqui; toda regra de verdade
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -276,3 +277,54 @@ async def sheet(
             [imaging.open_image(p) for p in frame_paths], source.with_suffix(".gif"), fps=fps
         )
     return generated
+
+
+@dataclass
+class AtlasResult:
+    """Onde o atlas e o manifesto ficaram, e o que o manifesto diz."""
+
+    path: Path
+    manifest_path: Path
+    entries: list[imaging.AtlasEntry] = field(default_factory=list)
+
+
+def build_atlas(
+    images: list[Path],
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    padding: int = 2,
+    max_width: int = 2048,
+) -> AtlasResult:
+    """Empacota sprites já existentes num atlas + manifesto JSON.
+
+    Puramente local — nenhum canal, nenhuma cota, e serve imagem de qualquer
+    origem, não só do que este projeto gerou. O nome de cada sprite no
+    manifesto é o nome do arquivo sem extensão, porque é o identificador que já
+    existe e que o motor de jogo vai reconhecer.
+    """
+    checked = [existing_path(p) for p in images]
+    if not checked:
+        raise ValueError("no images")
+
+    loaded = [(path.stem, imaging.open_image(path)) for path in checked]
+    canvas, entries = imaging.pack_atlas(loaded, padding=padding, max_width=max_width)
+
+    target = Path(out_dir or default_out_dir()).expanduser()
+    target.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name) if name else "atlas"
+    image_path = unique_path(target, stem, ".png")
+    canvas.save(image_path)
+
+    manifest_path = image_path.with_suffix(".json")
+    manifest = {
+        "image": image_path.name,
+        "size": {"w": canvas.width, "h": canvas.height},
+        "sprites": [
+            {"name": entry.name, "x": entry.x, "y": entry.y, "w": entry.w, "h": entry.h}
+            for entry in entries
+        ],
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+
+    return AtlasResult(path=image_path, manifest_path=manifest_path, entries=entries)

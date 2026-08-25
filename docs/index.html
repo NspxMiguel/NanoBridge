@@ -168,7 +168,12 @@ nanobridge sheet "a green slime" --grid 4x2 \
 
 # <span lang="en">local, no network, no quota</span><span lang="pt">local, sem rede, sem cota</span>
 nanobridge cut photo.jpg --transparent --trim --size 256
-nanobridge slice sheet.png --grid 6x1 --size 96</code></pre>
+nanobridge slice sheet.png --grid 6x1 --size 96
+nanobridge atlas hero.png villain.png item.png -o game/atlas</code></pre>
+  <p>
+    <span lang="en"><code>atlas</code> packs loose sprites into one sheet plus a JSON manifest of where each named sprite sits — what Godot, Phaser and Unity call a sprite atlas.</span>
+    <span lang="pt"><code>atlas</code> empacota sprites soltos numa folha só, mais um manifesto JSON de onde cada sprite nomeado ficou — o que Godot, Phaser e Unity chamam de atlas de sprites.</span>
+  </p>
 </section>
 
 <section>
@@ -183,7 +188,9 @@ nanobridge slice sheet.png --grid 6x1 --size 96</code></pre>
     <div class="card"><h3>generate_image</h3><p><span lang="en">Free-form, with reference images and multi-turn edits.</span><span lang="pt">Livre, com imagem de referência e edição em várias rodadas.</span></p></div>
     <div class="card"><h3>edit_image</h3><p><span lang="en">Change any image on disk in plain language.</span><span lang="pt">Muda qualquer imagem do disco em linguagem normal.</span></p></div>
     <div class="card"><h3>cut_image / slice_sheet</h3><p><span lang="en">Local post-processing. No network, no quota.</span><span lang="pt">Pós-processamento local. Sem rede, sem cota.</span></p></div>
+    <div class="card"><h3>pack_atlas</h3><p><span lang="en">Loose sprites into one sheet plus a manifest. Local, no quota.</span><span lang="pt">Sprites soltos numa folha só, mais manifesto. Local, sem cota.</span></p></div>
     <div class="card"><h3>nanobridge_status</h3><p><span lang="en">Which backend is live and what quota is left.</span><span lang="pt">Qual canal está de pé e quanta cota sobrou.</span></p></div>
+    <div class="card"><h3>nanobridge_reset</h3><p><span lang="en">Drop a stale session right after signing back in.</span><span lang="pt">Solta uma sessão morta assim que você entra de novo.</span></p></div>
   </div>
   <p style="margin-top:18px">
     <span lang="en">The preview handed back is the point: an agent that cannot see what it drew cannot tell a good sprite from a broken one, and iterates blind.</span>

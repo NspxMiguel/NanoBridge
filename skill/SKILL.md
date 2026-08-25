@@ -12,8 +12,10 @@ of billing per call.
 Two ways in, same engine:
 
 - **MCP tools** (`generate_sprite`, `generate_sprite_sheet`, `generate_image`,
-  `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`, `nanobridge_status`).
-  These return the picture back to you — look at it before calling the job done.
+  `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`, `pack_atlas`,
+  `nanobridge_status`, `nanobridge_reset`).
+  Every generating tool returns the picture back to you — look at it before
+  calling the job done.
 - **CLI** (`nanobridge …`) for anything scripted, batched, or run from a Makefile.
 
 ## When this is the right tool
@@ -38,7 +40,13 @@ nanobridge icon "a compass rose" --style flat
 nanobridge edit hero.png "make the sky stormy, keep everything else"
 nanobridge cut photo.jpg --transparent --trim --size 256      # local, no quota
 nanobridge slice sheet.png --grid 6x1 --size 96                # local, no quota
+nanobridge atlas hero.png villain.png item.png -o game/atlas   # local, no quota
 ```
+
+`atlas` (CLI) / `pack_atlas` (MCP) turns a set of separate sprites into one
+sheet plus a JSON manifest of each one's rectangle — the shape a game engine
+actually wants for a cast of different sprites, as opposed to `sheet`'s single
+subject animated across identical frames.
 
 Styles: `pixel` (default for sprites), `flat`, `cartoon`, `3d`, `realistic`,
 `sketch` — or any free-text description.
@@ -64,5 +72,7 @@ Styles: `pixel` (default for sprites), `flat`, `cartoon`, `3d`, `realistic`,
 ## When it will not work
 
 `nanobridge doctor` says so in one line. Almost always it is the session: sign in
-at <https://gemini.google.com> in Chrome and run it again. There is no API key to
-paste and nothing to buy.
+at <https://gemini.google.com> in Chrome and run it again. If the MCP server has
+been running a while, call `nanobridge_reset` right after signing back in —
+otherwise it keeps using the old session until a generation fails and reports
+it. There is no API key to paste and nothing to buy.

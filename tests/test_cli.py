@@ -163,3 +163,29 @@ def test_open_never_breaks_the_command(fake, tmp_path, monkeypatch):
     monkeypatch.setattr("nanobridge.cli.subprocess.run", boom)
     assert cli.main(["sprite", "a slime", "--out", str(tmp_path), "--name", "o", "--open"]) == 0
     assert (tmp_path / "o.png").exists()
+
+
+def test_atlas_command_packs_local_files(tmp_path, capsys):
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    Image.new("RGBA", (20, 20), (255, 0, 0, 255)).save(a)
+    Image.new("RGBA", (30, 10), (0, 255, 0, 255)).save(b)
+    out = tmp_path / "out"
+    assert cli.main(["--lang", "en", "atlas", str(a), str(b), "-o", str(out)]) == 0
+    assert "atlas with 2 sprites" in capsys.readouterr().out
+    assert (out / "atlas.png").exists()
+    assert (out / "atlas.json").exists()
+
+
+def test_atlas_command_accepts_a_directory(tmp_path):
+    src = tmp_path / "sprites"
+    src.mkdir()
+    Image.new("RGBA", (10, 10), (1, 1, 1, 255)).save(src / "one.png")
+    Image.new("RGBA", (10, 10), (2, 2, 2, 255)).save(src / "two.png")
+    out = tmp_path / "out"
+    assert cli.main(["atlas", "--dir", str(src), "-o", str(out), "--json"]) == 0
+
+
+def test_atlas_command_rejects_an_empty_call(tmp_path, capsys):
+    assert cli.main(["--lang", "en", "atlas", "-o", str(tmp_path)]) == 2
+    assert "Traceback" not in capsys.readouterr().err

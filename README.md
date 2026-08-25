@@ -72,19 +72,25 @@ Sheets are generated, sliced into frames, and assembled into a looping GIF with
 the transparency preserved — GIF has no alpha channel, so a palette index is
 reserved for the empty pixels.
 
-Two commands never touch the network, so they cost no quota and work on images
-from anywhere:
+Three commands never touch the network, so they cost no quota and work on
+images from anywhere:
 
 ```bash
 nanobridge cut photo.jpg --transparent --trim --size 256
 nanobridge slice sheet.png --grid 6x1 --size 96
+nanobridge atlas hero.png villain.png item.png -o game/atlas
 ```
+
+`atlas` is the gap between "I generated some sprites" and "the game can draw
+them": one sheet plus a JSON manifest of where each named sprite sits — what
+Godot, Phaser and Unity call a sprite atlas. `--dir` packs a whole folder
+instead of naming files one by one.
 
 ## Use it from an agent
 
 The MCP server exposes `generate_image`, `generate_sprite`,
 `generate_sprite_sheet`, `generate_icon`, `edit_image`, `cut_image`,
-`slice_sheet` and `nanobridge_status`.
+`slice_sheet`, `pack_atlas`, `nanobridge_status` and `nanobridge_reset`.
 
 Every generating tool returns the image **back to the model**, downscaled to a
 512px preview, alongside the paths on disk. That is the point: an agent that

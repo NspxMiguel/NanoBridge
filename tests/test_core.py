@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 
 import pytest
 from PIL import Image
@@ -171,3 +172,35 @@ def test_sheet_rerun_does_not_leave_stale_frames(tmp_path):
     assert len(second.frames) == 2
     on_disk = sorted(second.frames[0].parent.glob("*.png"))
     assert len(on_disk) == 2, f"sobraram quadros velhos: {[p.name for p in on_disk]}"
+
+
+def test_build_atlas_writes_the_image_and_the_manifest(tmp_path):
+    a = tmp_path / "hero.png"
+    b = tmp_path / "villain.png"
+    Image.new("RGBA", (30, 40), (255, 0, 0, 255)).save(a)
+    Image.new("RGBA", (20, 20), (0, 0, 255, 255)).save(b)
+
+    result = core.build_atlas([a, b], out_dir=tmp_path / "out")
+    assert result.path.exists()
+    assert result.manifest_path.exists()
+    manifest = json.loads(result.manifest_path.read_text())
+    assert manifest["image"] == result.path.name
+    names = {s["name"] for s in manifest["sprites"]}
+    assert names == {"hero", "villain"}
+
+
+def test_build_atlas_rejects_an_empty_list(tmp_path):
+    with pytest.raises(ValueError):
+        core.build_atlas([], out_dir=tmp_path)
+
+
+def test_build_atlas_rejects_a_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        core.build_atlas([tmp_path / "nope.png"], out_dir=tmp_path)
+
+
+def test_build_atlas_name_is_sanitised(tmp_path):
+    src = tmp_path / "a.png"
+    Image.new("RGBA", (10, 10), (1, 1, 1, 255)).save(src)
+    result = core.build_atlas([src], out_dir=tmp_path / "out", name="../../escaped")
+    assert result.path.parent == tmp_path / "out"

@@ -108,6 +108,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "sheet sliced into {n} frames ({cols}x{rows}) at {path}",
     },
     "sheet.gif": {"pt": "GIF montado: {path}", "en": "GIF assembled: {path}"},
+    "atlas.packed": {
+        "pt": "atlas com {n} sprites em {path}, manifesto em {manifest}",
+        "en": "atlas with {n} sprites at {path}, manifest at {manifest}",
+    },
     # --- config
     "cfg.lang_set": {"pt": "idioma agora é {lang}", "en": "language is now {lang}"},
     "cfg.lang_bad": {

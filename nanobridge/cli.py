@@ -208,6 +208,33 @@ def _cmd_cut(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_atlas(args: argparse.Namespace) -> int:
+    """Empacota sprites soltos num atlas + manifesto — nada de rede, nada de cota."""
+    images = [Path(p) for p in args.image]
+    if args.dir:
+        images += sorted(Path(args.dir).glob("*.png"))
+    result = core.build_atlas(
+        images, out_dir=args.out, name=args.name, padding=args.padding, max_width=args.max_width
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "path": str(result.path),
+                    "manifest": str(result.manifest_path),
+                    "sprites": [
+                        {"name": e.name, "x": e.x, "y": e.y, "w": e.w, "h": e.h} for e in result.entries
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(t("atlas.packed", n=len(result.entries), path=result.path, manifest=result.manifest_path))
+    return 0
+
+
 def _cmd_lang(args: argparse.Namespace) -> int:
     if args.lang not in SUPPORTED:
         print(t("cfg.lang_bad", lang=args.lang), file=sys.stderr)
@@ -289,6 +316,16 @@ def build_parser() -> argparse.ArgumentParser:
     cut.add_argument("--size", type=int)
     cut.add_argument("--tolerance", type=int, default=24)
     cut.set_defaults(func=_cmd_cut, is_async=False)
+
+    atlas = sub.add_parser("atlas", help="empacotar sprites soltos / pack loose sprites into an atlas")
+    atlas.add_argument("image", nargs="*", help="arquivos PNG / PNG files")
+    atlas.add_argument("--dir", help="pasta inteira de PNGs / a whole folder of PNGs")
+    atlas.add_argument("-o", "--out", type=Path)
+    atlas.add_argument("-n", "--name")
+    atlas.add_argument("--padding", type=int, default=2)
+    atlas.add_argument("--max-width", type=int, default=2048)
+    atlas.add_argument("--json", action="store_true")
+    atlas.set_defaults(func=_cmd_atlas, is_async=False)
 
     lang = sub.add_parser("lang", help="idioma salvo / saved language")
     lang.add_argument("lang", choices=SUPPORTED)

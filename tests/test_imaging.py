@@ -80,3 +80,59 @@ def test_save_gif_keeps_a_transparent_index(tmp_path):
 def test_save_gif_refuses_an_empty_list(tmp_path):
     with pytest.raises(ValueError):
         imaging.save_gif([], tmp_path / "a.gif")
+
+
+def solid(size, colour):
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(img).rectangle((0, 0, size[0] - 1, size[1] - 1), fill=colour)
+    return img
+
+
+def test_pack_atlas_places_everything_without_overlap():
+    images = [
+        ("tall", solid((20, 60), (255, 0, 0, 255))),
+        ("wide", solid((60, 20), (0, 255, 0, 255))),
+        ("small", solid((10, 10), (0, 0, 255, 255))),
+    ]
+    canvas, entries = imaging.pack_atlas(images, padding=2)
+    assert {e.name for e in entries} == {"tall", "wide", "small"}
+    boxes = [(e.x, e.y, e.x + e.w, e.y + e.h) for e in entries]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1 :]:
+            overlap = a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+            assert not overlap, f"{a} overlaps {b}"
+    for e in entries:
+        assert e.x + e.w <= canvas.width
+        assert e.y + e.h <= canvas.height
+
+
+def test_pack_atlas_manifest_follows_input_order_not_packing_order():
+    images = [("z", solid((10, 40), (1, 1, 1, 255))), ("a", solid((10, 10), (2, 2, 2, 255)))]
+    _, entries = imaging.pack_atlas(images)
+    assert [e.name for e in entries] == ["z", "a"]
+
+
+def test_pack_atlas_wraps_to_a_new_shelf_past_max_width():
+    images = [(f"s{i}", solid((100, 40), (i, i, i, 255))) for i in range(5)]
+    _, entries = imaging.pack_atlas(images, padding=0, max_width=250)
+    rows = {e.y for e in entries}
+    assert len(rows) > 1, "cinco sprites de 100px em max_width=250 têm que quebrar linha"
+
+
+def test_pack_atlas_pastes_the_real_pixels_not_just_the_boxes():
+    images = [("red", solid((20, 20), (255, 0, 0, 255))), ("blue", solid((20, 20), (0, 0, 255, 255)))]
+    canvas, entries = imaging.pack_atlas(images, padding=0)
+    red = entries[0] if entries[0].name == "red" else entries[1]
+    assert canvas.getpixel((red.x + 5, red.y + 5)) == (255, 0, 0, 255)
+
+
+def test_pack_atlas_rejects_an_empty_list():
+    with pytest.raises(ValueError):
+        imaging.pack_atlas([])
+
+
+def test_pack_atlas_respects_padding():
+    images = [("a", solid((10, 10), (1, 1, 1, 255))), ("b", solid((10, 10), (2, 2, 2, 255)))]
+    _, entries = imaging.pack_atlas(images, padding=5)
+    a, b = sorted(entries, key=lambda e: e.x)
+    assert b.x - (a.x + a.w) == 5

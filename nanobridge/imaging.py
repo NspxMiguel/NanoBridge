@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image
@@ -199,3 +200,67 @@ def save_gif(frames: list[Image.Image], path: Path, fps: int = 12) -> Path:
         optimize=False,
     )
     return path
+
+
+@dataclass
+class AtlasEntry:
+    """Um sprite dentro do atlas: nome e onde ele foi colocado."""
+
+    name: str
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+def pack_atlas(
+    images: list[tuple[str, Image.Image]],
+    padding: int = 2,
+    max_width: int = 2048,
+) -> tuple[Image.Image, list[AtlasEntry]]:
+    """Empacota sprites soltos numa folha só, com o manifesto de onde cada um caiu.
+
+    Nem `sheet` (que corta uma folha de ANIMAÇÃO em quadros iguais) nem uma
+    pasta cheia de PNGs individuais servem direto num motor de jogo — o motor
+    quer uma folha e um manifesto dizendo o retângulo de cada sprite. É isso que
+    Godot, Phaser e Unity chamam de atlas/spritesheet-with-manifest, e é o que
+    falta entre "gerei os sprites" e "o jogo consegue desenhar".
+
+    Empacotamento em prateleiras (shelf packing): ordena do mais alto pro mais
+    baixo, enche uma linha até estourar `max_width`, sobe pra próxima linha. Não
+    é o empacotamento ótimo (isso é NP-difícil), mas é determinístico, O(n log n)
+    e desperdiça pouco para o caso comum — dezenas de sprites de tamanho parecido,
+    não milhares de tamanhos aleatórios.
+    """
+    if not images:
+        raise ValueError("no images")
+
+    # Do mais alto pro mais baixo: prateleiras mais uniformes, menos sobra no
+    # fim de cada linha.
+    ordered = sorted(images, key=lambda item: item[1].height, reverse=True)
+
+    placements: list[AtlasEntry] = []
+    x = y = shelf_height = 0
+    canvas_width = 0
+    for name, img in ordered:
+        w, h = img.size
+        if x > 0 and x + w > max_width:
+            y += shelf_height + padding
+            x = 0
+            shelf_height = 0
+        placements.append(AtlasEntry(name=name, x=x, y=y, w=w, h=h))
+        canvas_width = max(canvas_width, x + w)
+        shelf_height = max(shelf_height, h)
+        x += w + padding
+
+    canvas_height = y + shelf_height
+    canvas = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
+    by_name = dict(images)
+    for entry in placements:
+        canvas.paste(by_name[entry.name], (entry.x, entry.y), by_name[entry.name])
+
+    # O manifesto sai na ordem em que o pedido chegou, não na ordem de
+    # empacotamento — quem lê o JSON não deveria ter que saber o algoritmo.
+    order = {name: index for index, (name, _) in enumerate(images)}
+    placements.sort(key=lambda entry: order[entry.name])
+    return canvas, placements

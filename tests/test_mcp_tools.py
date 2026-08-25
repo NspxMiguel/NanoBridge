@@ -148,3 +148,25 @@ async def test_nanobridge_reset_reports_whether_anything_dropped():
     WebBackend._client = object()
     assert "dropped" in (await mcp_server.nanobridge_reset()).lower()
     assert WebBackend._client is None
+
+
+def test_pack_atlas_returns_the_manifest_and_a_preview(tmp_path):
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    Image.open(io.BytesIO(png())).save(a)
+    Image.open(io.BytesIO(png())).resize((40, 40)).save(b)
+    out = tmp_path / "out"
+    parts = mcp_server.pack_atlas([str(a), str(b)], out_dir=str(out))
+    data = payload(parts)
+    assert len(data["sprites"]) == 2
+    assert images(parts)
+
+
+def test_pack_atlas_missing_file_is_a_message(tmp_path):
+    with pytest.raises(ToolError):
+        mcp_server.pack_atlas([str(tmp_path / "nope.png")])
+
+
+def test_pack_atlas_empty_list_is_a_message():
+    with pytest.raises(ToolError):
+        mcp_server.pack_atlas([])

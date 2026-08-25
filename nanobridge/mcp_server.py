@@ -323,6 +323,36 @@ def slice_sheet(
 
 @mcp.tool()
 @handled
+def pack_atlas(
+    images: list[str],
+    out_dir: str | None = None,
+    name: str | None = None,
+    padding: int = 2,
+    max_width: int = 2048,
+) -> list[TextContent | ImageContent]:
+    """Pack loose sprite PNGs into one atlas image plus a JSON manifest.
+
+    Neither a `generate_sprite` output nor a `generate_sprite_sheet` output is
+    what a game engine wants for a cast of different sprites: it wants one
+    sheet and a manifest of where each named sprite sits. This is that —
+    local, no quota, works on images from anywhere. `sprites` in the manifest
+    keeps the input order; each entry's `name` is the source filename without
+    its extension.
+    """
+    result = core.build_atlas(images, out_dir=out_dir, name=name, padding=padding, max_width=max_width)
+    summary = {
+        "path": str(result.path),
+        "manifest": str(result.manifest_path),
+        "sprites": [{"name": e.name, "x": e.x, "y": e.y, "w": e.w, "h": e.h} for e in result.entries],
+    }
+    return [
+        TextContent(type="text", text=json.dumps(summary, ensure_ascii=False)),
+        _preview(result.path),
+    ]
+
+
+@mcp.tool()
+@handled
 async def nanobridge_status() -> str:
     """Which backend is live, and how much quota the account has left."""
     lines = []
