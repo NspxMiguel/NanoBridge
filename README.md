@@ -128,4 +128,9 @@ for one run.
 
 ## License
 
-MIT.
+AGPL-3.0-or-later. This is not the default choice — it's inherited: NanoBridge
+imports `gemini-webapi`, which is AGPL-3.0, and a program that imports an AGPL
+library and is distributed has to carry compatible terms for the combined work.
+The practical consequence for a user running NanoBridge unmodified: none. It
+only binds someone who modifies NanoBridge and runs the modified version as a
+network service for others — they have to offer that modified source.
