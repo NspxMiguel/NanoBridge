@@ -37,7 +37,8 @@ def test_every_named_mcp_tool_exists(doc):
     declared.add("nanobridge_status")
     named = {t for t in declared if t in text}
     assert named, f"{doc} não cita ferramenta nenhuma"
-    for candidate in re.findall(r"`(generate_[a-z_]+|edit_image|cut_image|slice_sheet|nanobridge_status)`", text):
+    pattern = r"`(generate_[a-z_]+|edit_image|cut_image|slice_sheet|nanobridge_status)`"
+    for candidate in re.findall(pattern, text):
         assert candidate in declared, f"{doc} cita ferramenta inexistente: {candidate}"
 
 
