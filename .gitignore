@@ -18,3 +18,7 @@ build/
 # saída de imagem
 out/
 *.local.json
+
+# saida do coverage.py
+.coverage
+htmlcov/
