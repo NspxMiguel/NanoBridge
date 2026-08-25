@@ -118,3 +118,56 @@ def test_sheet_slices_the_grid_and_builds_a_gif(tmp_path):
 def test_sheet_rejects_a_bad_grid(tmp_path):
     with pytest.raises(ValueError):
         asyncio.run(core.sheet("x", grid="banana", backend=FakeBackend(), out_dir=tmp_path))
+
+
+def test_safe_stem_cannot_escape_the_output_folder():
+    """O `name` do MCP vem de um modelo: `../` não pode virar caminho de verdade."""
+    assert core.safe_stem("../../etc/passwd") == "passwd"
+    assert core.safe_stem("/absolute/thing.png") == "thing-png"
+    assert core.safe_stem("..") == "nanobridge"
+    assert "/" not in core.safe_stem("a/b/c")
+
+
+def test_unique_path_never_overwrites(tmp_path):
+    first = core.unique_path(tmp_path, "sprite", ".png")
+    first.write_bytes(b"x")
+    second = core.unique_path(tmp_path, "sprite", ".png")
+    assert second.name == "sprite-2.png"
+    second.write_bytes(b"x")
+    assert core.unique_path(tmp_path, "sprite", ".png").name == "sprite-3.png"
+
+
+def test_generating_the_same_subject_twice_keeps_both(tmp_path):
+    backend = FakeBackend()
+    a = asyncio.run(core.sprite("a slime", backend=backend, out_dir=tmp_path))
+    b = asyncio.run(core.sprite("a slime", backend=backend, out_dir=tmp_path))
+    assert a.paths[0] != b.paths[0]
+    assert a.paths[0].exists() and b.paths[0].exists()
+
+
+def test_name_with_traversal_stays_inside_out_dir(tmp_path):
+    backend = FakeBackend()
+    out = asyncio.run(core.generate("x", backend=backend, out_dir=tmp_path, name="../escaped"))
+    assert out.paths[0].parent == tmp_path
+
+
+def test_sheet_rerun_does_not_leave_stale_frames(tmp_path):
+    """Grade menor na segunda rodada deixava quadros órfãos da primeira."""
+    def sheet_bytes(cols):
+        img = Image.new("RGB", (40 * cols, 40), (255, 255, 255))
+        for c in range(cols):
+            img.paste(Image.new("RGB", (20, 20), (10 + c * 30, 120, 40)), (c * 40 + 10, 10))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    first = asyncio.run(
+        core.sheet("x", grid="4x1", backend=FakeBackend(images=[sheet_bytes(4)]), out_dir=tmp_path, name="s")
+    )
+    assert len(first.frames) == 4
+    second = asyncio.run(
+        core.sheet("x", grid="2x1", backend=FakeBackend(images=[sheet_bytes(2)]), out_dir=tmp_path, name="s")
+    )
+    assert len(second.frames) == 2
+    on_disk = sorted(second.frames[0].parent.glob("*.png"))
+    assert len(on_disk) == 2, f"sobraram quadros velhos: {[p.name for p in on_disk]}"

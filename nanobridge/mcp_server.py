@@ -8,25 +8,65 @@ bom nem o que corrigir na próxima rodada.
 from __future__ import annotations
 
 import base64
+import functools
+import inspect
 import json
 from pathlib import Path
 
 try:  # mcp >= 2.0
     from mcp.server import MCPServer as _Server
+    from mcp.server.mcpserver.exceptions import ToolError
 except ImportError:  # pragma: no cover - mcp 1.x
     from mcp.server.fastmcp import FastMCP as _Server
+    from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
 from . import config, core, imaging
 from .backends import all_backends, pick
 from .core import STYLES
 from .errors import NanoBridgeError
+from .i18n import t
 
 mcp = _Server("nanobridge")
 
 # Imagem grande demais estoura a janela de contexto do agente sem ajudar em
 # nada: para julgar um sprite, uma pré-visualização pequena basta.
 PREVIEW_MAX_SIDE = 512
+
+
+def handled(fn):
+    """Transforma falha prevista em mensagem, não em traceback.
+
+    O servidor MCP trata qualquer exceção que não seja `ToolError` como queda:
+    o agente recebe "Error executing tool X" e um traceback no log, e perde a
+    única frase que diria o que fazer — renovar a sessão do Gemini, corrigir o
+    caminho, trocar a grade. Erro imprevisto continua subindo cru, que é o certo:
+    bug tem que ser barulhento.
+    """
+
+    @functools.wraps(fn)
+    async def async_wrapper(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except (NanoBridgeError, FileNotFoundError, ValueError) as exc:
+            raise ToolError(str(exc)) from exc
+
+    @functools.wraps(fn)
+    def sync_wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (NanoBridgeError, FileNotFoundError, ValueError) as exc:
+            raise ToolError(str(exc)) from exc
+
+    return async_wrapper if inspect.iscoroutinefunction(fn) else sync_wrapper
+
+
+def _existing(path: str) -> Path:
+    """Caminho que precisa existir — falha aqui dá mensagem, falha no Pillow dá pilha."""
+    resolved = Path(path).expanduser()
+    if not resolved.exists():
+        raise FileNotFoundError(t("err.file_missing", path=str(resolved)))
+    return resolved
 
 
 def _preview(path: Path) -> ImageContent:
@@ -78,6 +118,7 @@ def _kwargs(out_dir: str | None, name: str | None, backend: str | None, model: s
 
 
 @mcp.tool()
+@handled
 async def generate_image(
     prompt: str,
     out_dir: str | None = None,
@@ -109,6 +150,7 @@ async def generate_image(
 
 
 @mcp.tool()
+@handled
 async def generate_sprite(
     subject: str,
     style: str = "pixel",
@@ -127,6 +169,7 @@ async def generate_sprite(
 
 
 @mcp.tool()
+@handled
 async def generate_icon(
     subject: str,
     style: str = "flat",
@@ -145,6 +188,7 @@ async def generate_icon(
 
 
 @mcp.tool()
+@handled
 async def generate_sprite_sheet(
     subject: str,
     action: str = "a simple looping idle animation",
@@ -175,6 +219,7 @@ async def generate_sprite_sheet(
 
 
 @mcp.tool()
+@handled
 async def edit_image(
     image: str,
     prompt: str,
@@ -204,6 +249,7 @@ async def edit_image(
 
 
 @mcp.tool()
+@handled
 def cut_image(
     image: str,
     out: str | None = None,
@@ -216,7 +262,8 @@ def cut_image(
 
     No network and no quota — use it on an image that came from anywhere.
     """
-    img = imaging.open_image(image)
+    source = _existing(image)
+    img = imaging.open_image(source)
     if transparent:
         img = imaging.make_transparent(img, tol=tolerance)
     if trim:
@@ -230,6 +277,7 @@ def cut_image(
 
 
 @mcp.tool()
+@handled
 def slice_sheet(
     image: str,
     grid: str = "4x2",
@@ -240,8 +288,9 @@ def slice_sheet(
     gif: bool = True,
 ) -> list[TextContent | ImageContent]:
     """Slice an existing sheet into frames and optionally build a GIF. Local only."""
+    source = _existing(image)
     cols, rows = imaging.parse_grid(grid)
-    img = imaging.open_image(image)
+    img = imaging.open_image(source)
     if transparent:
         img = imaging.make_transparent(img)
     target = Path(out_dir).expanduser() if out_dir else Path(image).with_suffix("")
@@ -272,6 +321,7 @@ def slice_sheet(
 
 
 @mcp.tool()
+@handled
 async def nanobridge_status() -> str:
     """Which backend is live, and how much quota the account has left."""
     lines = []

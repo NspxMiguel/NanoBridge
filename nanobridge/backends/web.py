@@ -9,11 +9,12 @@ conta já tem, com a cota que já está paga.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import tempfile
 from pathlib import Path
 
+from ..conversation import decode as decode_conversation
+from ..conversation import encode as encode_conversation
 from ..errors import NoCookiesError, SessionExpiredError
 from ..i18n import t
 from .base import Backend, Result
@@ -58,6 +59,26 @@ def find_cookies() -> dict[str, str] | None:
             found["_source"] = name
             return found
     return None
+
+
+# Frases que o Gemini usa quando a sessão não vale. São poucas e mudam devagar;
+# errar para o lado de não reconhecer é seguro, porque o texto do modelo continua
+# aparecendo na outra mensagem.
+_SIGNED_OUT = (
+    "signed out",
+    "sign in",
+    "sign back in",
+    "not signed in",
+    "desconectado",
+    "faça login",
+    "faca login",
+    "entre na sua conta",
+)
+
+
+def _sounds_signed_out(text: str) -> bool:
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in _SIGNED_OUT)
 
 
 class WebBackend(Backend):
@@ -131,10 +152,13 @@ class WebBackend(Backend):
     ) -> Result:
         client = await self._get_client()
         chat = None
-        if conversation:
+        metadata_in = decode_conversation(conversation)
+        if metadata_in:
             try:
-                chat = client.start_chat(metadata=json.loads(conversation), model=model or None)
-            except (json.JSONDecodeError, TypeError, ValueError):
+                chat = client.start_chat(metadata=metadata_in, model=model or None)
+            except (TypeError, ValueError):
+                # Token de outra conta ou de uma conversa apagada: começar uma
+                # nova é melhor do que falhar — o pedido do usuário continua válido.
                 chat = None
 
         paths = [str(Path(f).expanduser()) for f in (files or [])]
@@ -153,6 +177,13 @@ class WebBackend(Backend):
             output = await session.send_message(prompt, files=paths or None)
             metadata = session.metadata
 
+        # Sessão inválida não estoura no init: o endpoint aceita a conversa e o
+        # modelo responde "you might be signed out" em texto, sem imagem. Sem
+        # este teste o usuário levava "o modelo não devolveu imagem nenhuma",
+        # que esconde a única coisa acionável — entrar de novo no Gemini.
+        if not output.images and _sounds_signed_out(output.text or ""):
+            raise SessionExpiredError()
+
         images: list[bytes] = []
         if output.images:
             # A biblioteca só sabe salvar em disco; um diretório temporário
@@ -167,7 +198,7 @@ class WebBackend(Backend):
             text=output.text or "",
             backend=self.name,
             model=model or "gemini (nano banana)",
-            conversation=json.dumps(metadata) if metadata else None,
+            conversation=encode_conversation(metadata),
         )
 
     async def close(self) -> None:

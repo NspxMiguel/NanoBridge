@@ -60,6 +60,32 @@ def slugify(text: str, fallback: str = "nanobridge") -> str:
     return (slug[:48] or fallback).strip("-") or fallback
 
 
+def safe_stem(name: str, fallback: str = "nanobridge") -> str:
+    """Nome de arquivo vindo de fora nunca pode escapar da pasta de saída.
+
+    Quem preenche `name` no servidor MCP é um modelo. `../../algo` gravaria fora
+    de `out_dir` sem ninguém perceber — então só sobra o nome final, e ele passa
+    pelo mesmo filtro do slug.
+    """
+    return slugify(Path(str(name)).name, fallback=fallback)
+
+
+def unique_path(directory: Path, stem: str, suffix: str) -> Path:
+    """Caminho livre: `x.png`, senão `x-2.png`, `x-3.png`…
+
+    Gerar duas vezes com o mesmo assunto é o fluxo normal — o modelo não repete a
+    imagem, e a segunda apagava a primeira em silêncio.
+    """
+    candidate = directory / f"{stem}{suffix}"
+    if not candidate.exists():
+        return candidate
+    for counter in range(2, 1000):
+        candidate = directory / f"{stem}-{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(str(directory / stem))
+
+
 def style_text(style: str | None) -> str:
     if not style:
         return STYLES[DEFAULT_STYLE]
@@ -103,12 +129,12 @@ async def _run(
 
     target = Path(out_dir or default_out_dir()).expanduser()
     target.mkdir(parents=True, exist_ok=True)
-    stem = name or f"{slugify(prompt)}-{datetime.now().strftime('%H%M%S')}"
+    stem = safe_stem(name) if name else f"{slugify(prompt)}-{datetime.now().strftime('%H%M%S')}"
+    needs_pillow = bool(transparent or trim or size)
 
     paths: list[Path] = []
     for index, raw in enumerate(result.images):
-        suffix = "" if len(result.images) == 1 else f"-{index + 1}"
-        needs_pillow = transparent or trim or size
+        part = "" if len(result.images) == 1 else f"-{index + 1}"
         if needs_pillow:
             img = imaging.open_image(raw)
             if transparent:
@@ -117,10 +143,10 @@ async def _run(
                 img = imaging.trim(img, tol=tolerance)
             if size:
                 img = imaging.fit(img, size, pad=False)
-            path = target / f"{stem}{suffix}.png"
+            path = unique_path(target, f"{stem}{part}", ".png")
             img.save(path)
         else:
-            path = target / f"{stem}{suffix}{imaging.sniff_extension(raw)}"
+            path = unique_path(target, f"{stem}{part}", imaging.sniff_extension(raw))
             path.write_bytes(raw)
         paths.append(path)
 
@@ -188,7 +214,7 @@ async def sheet(
         total=cols * rows,
         action=action,
     )
-    stem = kwargs.pop("name", None) or f"sheet-{slugify(subject)}"
+    stem = safe_stem(kwargs.pop("name", None) or f"sheet-{slugify(subject)}")
     transparent = kwargs.pop("transparent", True)
     tolerance = kwargs.get("tolerance", 24)
     generated = await _run(prompt, name=stem, transparent=False, trim=False, **kwargs)
@@ -206,14 +232,19 @@ async def sheet(
         source = transparent_path
         generated.paths = [source] + generated.paths[1:]
 
-    frames_dir = source.parent / f"{stem}-frames"
+    # A pasta de quadros leva o nome do arquivo que saiu, não o pedido: rodar de
+    # novo com uma grade menor deixaria quadros da rodada anterior lá dentro,
+    # e ninguém saberia quais são de qual.
+    frames_dir = source.parent / f"{source.stem}-frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frames_dir.glob("*.png"):
+        stale.unlink()
     frame_paths: list[Path] = []
     frames = imaging.slice_sheet(full, cols, rows)
     for index, frame in enumerate(frames, start=1):
         if frame_size:
             frame = imaging.fit(frame, frame_size)
-        path = frames_dir / f"{stem}-{index:02d}.png"
+        path = frames_dir / f"{source.stem}-{index:02d}.png"
         frame.save(path)
         frame_paths.append(path)
 
@@ -221,6 +252,6 @@ async def sheet(
     generated.grid = (cols, rows)
     if gif and frame_paths:
         generated.gif = imaging.save_gif(
-            [imaging.open_image(p) for p in frame_paths], source.parent / f"{stem}.gif", fps=fps
+            [imaging.open_image(p) for p in frame_paths], source.with_suffix(".gif"), fps=fps
         )
     return generated

@@ -102,3 +102,19 @@ def test_api_other_errors_name_the_backend(monkeypatch):
         asyncio.run(api.ApiBackend().generate("x"))
     assert "api" in str(err.value)
     assert "bad model" in str(err.value)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("You might be signed out or image creation may not be available.", True),
+        ("Please sign in to continue.", True),
+        ("Você parece estar desconectado.", True),
+        ("I can't create that image — it goes against the policy.", False),
+        ("Here you go!", False),
+        ("", False),
+    ],
+)
+def test_signed_out_detection(text, expected):
+    """Sessão morta responde em texto, sem erro de rede: é o texto que denuncia."""
+    assert web._sounds_signed_out(text) is expected
