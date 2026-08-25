@@ -204,6 +204,64 @@ async def generate_icon(
 
 @mcp.tool()
 @handled
+async def generate_cast(
+    subjects: list[str],
+    style: str = "pixel",
+    size: int | None = 128,
+    palette: str = "auto",
+    atlas: bool = True,
+    formats: list[str] | None = None,
+    out_dir: str | None = None,
+    name: str | None = None,
+    backend: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Generate several sprites that belong to the same game, and pack them.
+
+    This is the one to reach for when the task is 'a set of characters' rather
+    than a single image. Generating them one at a time gives a cast that does
+    not match — the model picks a slightly different green each time.
+
+    `palette="auto"` (the default) generates the first subject freely, reads its
+    palette, and locks every other subject to it, so the set is coherent without
+    anyone choosing a palette. Pass a built-in name, a .hex path or a #RRGGBB
+    list to choose one instead.
+
+    The rest are generated concurrently, so a cast of six does not cost six
+    times one. A subject that fails does not lose the others — it comes back in
+    `failed` with the reason, and the cast returns with whoever made it.
+    """
+    result = await core.cast(
+        subjects,
+        style=style,
+        size=size,
+        palette=palette,
+        atlas=atlas,
+        formats=formats,
+        atlas_name=name,
+        out_dir=Path(out_dir).expanduser() if out_dir else None,
+        backend_name=backend,
+    )
+    summary = {
+        "sprites": [str(s.paths[0]) for s in result.sprites],
+        "palette": [palettes.rgb_to_hex(c) for c in result.palette],
+        "atlas": str(result.atlas.path) if result.atlas else None,
+        "manifests": ({k: str(v) for k, v in result.atlas.manifests.items()} if result.atlas else {}),
+        "failed": result.failed,
+    }
+    out: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(summary, ensure_ascii=False))
+    ]
+    # O atlas mostra o elenco inteiro de uma vez; sem ele, os sprites um a um.
+    if result.atlas:
+        out.append(_preview(result.atlas.path))
+    else:
+        for generated in result.sprites[:8]:
+            out.append(_preview(generated.paths[0]))
+    return out
+
+
+@mcp.tool()
+@handled
 async def generate_sprite_sheet(
     subject: str,
     action: str = "a simple looping idle animation",

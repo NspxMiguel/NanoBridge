@@ -108,6 +108,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "sheet sliced into {n} frames ({cols}x{rows}) at {path}",
     },
     "sheet.gif": {"pt": "GIF montado: {path}", "en": "GIF assembled: {path}"},
+    "cast.done": {
+        "pt": "elenco com {n} sprites em {path}",
+        "en": "cast of {n} sprites at {path}",
+    },
+    "cast.failed": {"pt": "não saiu: {subject} — {why}", "en": "did not come out: {subject} — {why}"},
+    "cast.palette": {"pt": "paleta do elenco: {colours}", "en": "cast palette: {colours}"},
     "palette.list": {"pt": "paletas embutidas", "en": "built-in palettes"},
     "palette.extracted": {
         "pt": "{n} cores extraídas de {src}",

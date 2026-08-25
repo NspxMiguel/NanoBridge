@@ -6,6 +6,7 @@ O CLI e o servidor MCP são casca fina em cima daqui; toda regra de verdade
 
 from __future__ import annotations
 
+import asyncio
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -15,14 +16,19 @@ from pathlib import Path
 from . import atlas_formats, imaging, palettes
 from .backends import Backend, pick
 from .config import default_out_dir
-from .errors import NoImageError
+from .errors import NanoBridgeError, NoImageError
 from .i18n import t
 
 # Estes moldes existem porque prompt cru rende imagem bonita e sprite inútil:
 # sem pedir fundo chapado e enquadramento único, vem cena com sombra e chão.
 SPRITE_TEMPLATE = (
     "A single game sprite of {subject}. {style}. "
-    "One subject only, centred, full body, facing the camera, no cropping. "
+    "EXACTLY ONE character, alone in the frame, centred, full body, facing the "
+    "camera, no cropping. "
+    # Sem estes negativos o modelo entrega uma folha de rotação: o mesmo
+    # personagem três vezes, de ângulos diferentes, num quadro só.
+    "Do not draw the character more than once. No turnaround, no side views, "
+    "no variations, no duplicates, no side-by-side versions, no character sheet. "
     "Flat solid pure white background (#FFFFFF), no gradient, no shadow, no floor, "
     "no text, no watermark, no border, no frame, no mockup, no extra objects."
 )
@@ -462,3 +468,101 @@ def apply_palette(
     target.parent.mkdir(parents=True, exist_ok=True)
     result.save(target)
     return target
+
+
+@dataclass
+class CastResult:
+    """Um elenco: os sprites, a paleta que os une, e o atlas se foi pedido."""
+
+    sprites: list[Generated] = field(default_factory=list)
+    palette: list[imaging.Rgb] = field(default_factory=list)
+    atlas: AtlasResult | None = None
+    failed: dict[str, str] = field(default_factory=dict)
+
+
+async def cast(
+    subjects: list[str],
+    *,
+    style: str | None = None,
+    palette: str | list[str] | None = "auto",
+    size: int | None = 128,
+    out_dir: Path | None = None,
+    atlas: bool = True,
+    formats: list[str] | None = None,
+    atlas_name: str | None = None,
+    **kwargs,
+) -> CastResult:
+    """Gera vários sprites que pertencem ao mesmo jogo, e opcionalmente o atlas.
+
+    `palette="auto"` é o motivo de isto existir. Gerar personagens um a um dá um
+    elenco que não combina: o modelo escolhe um verde ligeiramente diferente a
+    cada vez. Aqui o primeiro sprite é gerado livre, a paleta dele é extraída, e
+    todos os outros são travados nela — ninguém precisa escolher paleta nenhuma
+    para o conjunto ficar coerente.
+
+    Os demais saem em paralelo. Já foi medido que duas gerações simultâneas
+    levam o tempo de uma, então um elenco de seis não precisa custar seis vezes.
+
+    Um assunto que falha não derruba o resto: ele entra em `failed` com o
+    motivo, e o elenco sai com quem deu certo.
+    """
+    if not subjects:
+        raise ValueError("no subjects")
+
+    target = Path(out_dir or default_out_dir()).expanduser()
+    auto = isinstance(palette, str) and palette.lower() == "auto"
+    shared: str | list[str] | None = None if auto else palette
+
+    async def one(subject: str, locked: str | list[str] | None) -> Generated:
+        return await sprite(
+            subject,
+            style=style,
+            size=size,
+            palette=locked,
+            out_dir=target,
+            name=slugify(subject),
+            **kwargs,
+        )
+
+    sprites: list[Generated] = []
+    failed: dict[str, str] = {}
+
+    # Todos de uma vez. Uma primeira versão gerava o líder, extraía a paleta
+    # dele e travava o resto — o que dava um elenco travado nas cores de UM
+    # personagem: um slime verde ficou cinza porque o cavaleiro de armadura veio
+    # primeiro. A paleta tem que sair do conjunto, não do primeiro.
+    results = await asyncio.gather(
+        *(one(subject, shared) for subject in subjects), return_exceptions=True
+    )
+    for subject, result in zip(subjects, results, strict=True):
+        if isinstance(result, BaseException):
+            failed[subject] = str(result)
+        else:
+            sprites.append(result)
+
+    if auto and sprites:
+        # A paleta do elenco inteiro sai da montagem de todos: é a mesma imagem
+        # que o atlas monta, e extrair dela dá as cores que representam o grupo.
+        loaded = [(s.paths[0].stem, imaging.open_image(s.paths[0])) for s in sprites]
+        montage, _ = imaging.pack_atlas(loaded, padding=0)
+        shared = [palettes.rgb_to_hex(c) for c in imaging.extract_palette(montage, count=16)]
+
+    if shared:
+        # Quantizar depois de gerar não custa cota nenhuma, e é o que permite a
+        # paleta ser do conjunto em vez de do primeiro.
+        colours = palettes.resolve(shared)
+        for generated in sprites:
+            path = generated.paths[0]
+            imaging.quantize_to_palette(imaging.open_image(path), colours).save(path)
+
+    packed = None
+    if atlas and sprites:
+        packed = build_atlas(
+            [s.paths[0] for s in sprites],
+            out_dir=target,
+            name=atlas_name or "cast",
+            formats=formats,
+        )
+
+    resolved = palettes.resolve(shared) if shared else []
+    return CastResult(sprites=sprites, palette=resolved, atlas=packed, failed=failed)

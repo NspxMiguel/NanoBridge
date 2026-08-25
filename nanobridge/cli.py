@@ -254,6 +254,50 @@ def _cmd_atlas(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_cast(args: argparse.Namespace) -> int:
+    """Um elenco inteiro coerente, num comando."""
+    result = await core.cast(
+        args.subject,
+        style=args.style,
+        palette=args.palette or "auto",
+        size=args.size,
+        out_dir=args.out,
+        atlas=not args.no_atlas,
+        formats=args.format,
+        atlas_name=args.name,
+        backend_name=args.backend,
+        retries=args.retries,
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "sprites": [str(s.paths[0]) for s in result.sprites],
+                    "palette": [core.palettes.rgb_to_hex(c) for c in result.palette],
+                    "atlas": str(result.atlas.path) if result.atlas else None,
+                    "manifests": (
+                        {k: str(v) for k, v in result.atlas.manifests.items()} if result.atlas else {}
+                    ),
+                    "failed": result.failed,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        for generated in result.sprites:
+            print(t("gen.saved", path=generated.paths[0]))
+        if result.palette:
+            shown = " ".join(core.palettes.rgb_to_hex(c) for c in result.palette[:8])
+            print(t("cast.palette", colours=shown))
+        if result.atlas:
+            print(t("atlas.packed", n=len(result.atlas.entries), path=result.atlas.path,
+                    manifest=", ".join(str(v) for v in result.atlas.manifests.values())))
+        for subject, why in result.failed.items():
+            print(t("cast.failed", subject=subject, why=why), file=sys.stderr)
+    return 1 if not result.sprites else 0
+
+
 def _cmd_palettes(args: argparse.Namespace) -> int:
     """Lista as paletas embutidas, com as cores, para escolher sem adivinhar."""
     print(t("palette.list"))
@@ -363,6 +407,24 @@ def build_parser() -> argparse.ArgumentParser:
     cut.add_argument("--size", type=int)
     cut.add_argument("--tolerance", type=int, default=24)
     cut.set_defaults(func=_cmd_cut, is_async=False)
+
+    cast = sub.add_parser("cast", help="um elenco coerente de uma vez / a whole coherent cast at once")
+    cast.add_argument("subject", nargs="+")
+    cast.add_argument("-s", "--style", default="pixel")
+    cast.add_argument("--size", type=int, default=128)
+    cast.add_argument(
+        "--palette",
+        help="paleta do elenco; o padrão 'auto' tira do primeiro sprite / "
+        "cast palette; default 'auto' takes it from the first sprite",
+    )
+    cast.add_argument("--no-atlas", action="store_true")
+    cast.add_argument("-f", "--format", action="append", choices=atlas_formats.FORMATS)
+    cast.add_argument("-o", "--out", type=Path)
+    cast.add_argument("-n", "--name", help="nome do atlas / atlas name")
+    cast.add_argument("-b", "--backend", choices=("web", "api"))
+    cast.add_argument("--retries", type=int, default=2)
+    cast.add_argument("--json", action="store_true")
+    cast.set_defaults(func=_cmd_cast, is_async=True)
 
     atlas = sub.add_parser("atlas", help="empacotar sprites soltos / pack loose sprites into an atlas")
     atlas.add_argument("image", nargs="*", help="arquivos PNG / PNG files")

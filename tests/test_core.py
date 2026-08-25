@@ -377,3 +377,113 @@ def test_build_atlas_defaults_to_the_project_format(tmp_path):
     Image.open(io.BytesIO(png())).save(src)
     result = core.build_atlas([src], out_dir=tmp_path / "out", name="t")
     assert list(result.manifests) == ["nanobridge"]
+
+
+def test_cast_locks_everyone_to_the_first_sprites_palette(tmp_path):
+    """`palette="auto"` é o motivo do comando existir."""
+    backend = FakeBackend()
+    result = asyncio.run(
+        core.cast(["a knight", "a wizard"], backend=backend, out_dir=tmp_path, atlas=False)
+    )
+    assert len(result.sprites) == 2
+    assert result.palette, "tinha que ter extraído uma paleta do primeiro"
+    allowed = set(result.palette)
+    for generated in result.sprites[1:]:
+        with Image.open(generated.paths[0]) as img:
+            assert opaque_colours(img) <= allowed
+
+
+def test_cast_with_an_explicit_palette_uses_it_for_everyone(tmp_path):
+    backend = FakeBackend()
+    result = asyncio.run(
+        core.cast(["a", "b"], backend=backend, out_dir=tmp_path, palette="gameboy", atlas=False)
+    )
+    allowed = set(core.palettes.resolve("gameboy"))
+    for generated in result.sprites:
+        with Image.open(generated.paths[0]) as img:
+            assert opaque_colours(img) <= allowed
+
+
+def test_cast_builds_an_atlas_by_default(tmp_path):
+    backend = FakeBackend()
+    result = asyncio.run(core.cast(["a", "b"], backend=backend, out_dir=tmp_path))
+    assert result.atlas is not None
+    assert result.atlas.path.exists()
+    assert {e.name for e in result.atlas.entries} == {"a", "b"}
+
+
+def test_cast_can_skip_the_atlas(tmp_path):
+    result = asyncio.run(core.cast(["a"], backend=FakeBackend(), out_dir=tmp_path, atlas=False))
+    assert result.atlas is None
+
+
+def test_one_failure_does_not_lose_the_rest_of_the_cast(tmp_path):
+    class Picky(FakeBackend):
+        async def generate(self, prompt, files=None, model=None, conversation=None):
+            if "goblin" in prompt:
+                return Result(images=[], text="I can't create that.", backend=self.name)
+            return await super().generate(prompt, files=files, model=model, conversation=conversation)
+
+    result = asyncio.run(
+        core.cast(["a knight", "a goblin", "a wizard"], backend=Picky(), out_dir=tmp_path, atlas=False)
+    )
+    assert len(result.sprites) == 2
+    assert "a goblin" in result.failed
+    assert "can't create" in result.failed["a goblin"]
+
+
+def test_a_failing_lead_still_lets_the_rest_through(tmp_path):
+    class LeadFails(FakeBackend):
+        async def generate(self, prompt, files=None, model=None, conversation=None):
+            if "bad" in prompt:
+                return Result(images=[], text="I can't create that.", backend=self.name)
+            return await super().generate(prompt, files=files, model=model, conversation=conversation)
+
+    result = asyncio.run(
+        core.cast(["bad", "good"], backend=LeadFails(), out_dir=tmp_path, atlas=False)
+    )
+    assert "bad" in result.failed
+    assert len(result.sprites) == 1
+
+
+def test_cast_rejects_an_empty_list(tmp_path):
+    with pytest.raises(ValueError):
+        asyncio.run(core.cast([], backend=FakeBackend(), out_dir=tmp_path))
+
+
+def test_cast_names_files_after_the_subjects(tmp_path):
+    result = asyncio.run(
+        core.cast(["a red knight"], backend=FakeBackend(), out_dir=tmp_path, atlas=False)
+    )
+    assert result.sprites[0].paths[0].stem == "a-red-knight"
+
+
+def test_cast_palette_comes_from_the_whole_group_not_the_first(tmp_path):
+    """Um slime verde ficou cinza porque o cavaleiro de armadura veio primeiro:
+    a paleta tem que representar o elenco, não o líder."""
+
+    class Coloured(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.n = 0
+
+        async def generate(self, prompt, files=None, model=None, conversation=None):
+            self.n += 1
+            # primeiro cinza, depois verde forte
+            colour = (128, 128, 128) if self.n == 1 else (0, 220, 0)
+            return Result(images=[png(colour=colour)], text="", backend=self.name)
+
+    result = asyncio.run(
+        core.cast(["grey one", "green one"], backend=Coloured(), out_dir=tmp_path, atlas=False)
+    )
+    greens = [c for c in result.palette if c[1] > c[0] + 40 and c[1] > c[2] + 40]
+    assert greens, f"nenhum verde sobreviveu na paleta do elenco: {result.palette}"
+
+
+def test_sprite_prompt_forbids_a_turnaround_sheet():
+    """O modelo entregava o mesmo personagem três vezes num quadro só."""
+    prompt = core.SPRITE_TEMPLATE.format(subject="a rogue", style=core.style_text("pixel"))
+    lowered = prompt.lower()
+    assert "exactly one character" in lowered
+    for banned in ("no turnaround", "no duplicates", "no character sheet"):
+        assert banned in lowered
