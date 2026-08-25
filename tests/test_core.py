@@ -487,3 +487,14 @@ def test_sprite_prompt_forbids_a_turnaround_sheet():
     assert "exactly one character" in lowered
     for banned in ("no turnaround", "no duplicates", "no character sheet"):
         assert banned in lowered
+
+
+def test_cast_passes_pixels_and_zoom_through(tmp_path):
+    """cast é o comando de pixel art e não sabia fazer pixel art de verdade."""
+    result = asyncio.run(
+        core.cast(["a", "b"], backend=FakeBackend(), out_dir=tmp_path,
+                  atlas=False, pixels=16, zoom=4)
+    )
+    for generated in result.sprites:
+        with Image.open(generated.paths[0]) as img:
+            assert max(img.size) == 16 * 4

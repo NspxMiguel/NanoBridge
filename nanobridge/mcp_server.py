@@ -209,6 +209,8 @@ async def generate_cast(
     style: str = "pixel",
     size: int | None = 128,
     palette: str = "auto",
+    pixels: int | None = None,
+    zoom: int = 1,
     atlas: bool = True,
     formats: list[str] | None = None,
     out_dir: str | None = None,
@@ -238,6 +240,8 @@ async def generate_cast(
         atlas=atlas,
         formats=formats,
         atlas_name=name,
+        pixels=pixels,
+        zoom=zoom,
         out_dir=Path(out_dir).expanduser() if out_dir else None,
         backend_name=backend,
     )

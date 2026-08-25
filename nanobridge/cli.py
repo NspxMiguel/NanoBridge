@@ -281,7 +281,14 @@ async def _cmd_cast(args: argparse.Namespace) -> int:
         atlas=not args.no_atlas,
         formats=args.format,
         atlas_name=args.name,
+        pixels=args.pixels,
+        zoom=args.zoom,
+        dither=args.dither,
+        tolerance=args.tolerance,
+        trim=args.trim,
+        transparent=args.transparent,
         backend_name=args.backend,
+        model=args.model,
         retries=args.retries,
     )
     if args.json:
@@ -311,6 +318,8 @@ async def _cmd_cast(args: argparse.Namespace) -> int:
                     manifest=", ".join(str(v) for v in result.atlas.manifests.values())))
         for subject, why in result.failed.items():
             print(t("cast.failed", subject=subject, why=why), file=sys.stderr)
+    if args.open and (result.atlas or result.sprites):
+        _open_files([result.atlas.path] if result.atlas else [s.paths[0] for s in result.sprites])
     return 1 if not result.sprites else 0
 
 
@@ -437,11 +446,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="paleta do elenco; o padrão 'auto' tira do primeiro sprite / "
         "cast palette; default 'auto' takes it from the first sprite",
     )
+    cast.add_argument("--pixels", type=int, help="pixels de arte no lado maior / art pixels")
+    cast.add_argument("--zoom", type=int, default=1)
+    cast.add_argument("--dither", action="store_true")
+    cast.add_argument("--tolerance", type=int, default=24)
+    # `--no-trim` mantém todos os sprites do mesmo tamanho, que é o que se quer
+    # quando o atlas vai virar quadros de tamanho fixo num motor.
+    cast.add_argument("--trim", action="store_true", default=True)
+    cast.add_argument("--no-trim", dest="trim", action="store_false")
+    cast.add_argument("--transparent", action="store_true", default=True)
+    cast.add_argument("--no-transparent", dest="transparent", action="store_false")
+    cast.add_argument("--open", action="store_true", help="abrir o atlas ao terminar")
     cast.add_argument("--no-atlas", action="store_true")
     cast.add_argument("-f", "--format", action="append", choices=atlas_formats.FORMATS)
     cast.add_argument("-o", "--out", type=Path)
     cast.add_argument("-n", "--name", help="nome do atlas / atlas name")
     cast.add_argument("-b", "--backend", choices=("web", "api"))
+    cast.add_argument("-m", "--model")
     cast.add_argument("--retries", type=int, default=2)
     cast.add_argument("--json", action="store_true")
     cast.set_defaults(func=_cmd_cast, is_async=True)

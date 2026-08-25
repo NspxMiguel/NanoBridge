@@ -237,3 +237,29 @@ def test_sprite_accepts_a_palette_flag(fake, tmp_path):
                      "--palette", "gameboy"]) == 0
     with Image.open(tmp_path / "s.png") as img:
         assert opaque_colours(img) <= set(core.palettes.resolve("gameboy"))
+
+
+def test_cast_has_the_same_post_processing_flags_as_sprite():
+    """Superfície inconsistente é bug por si só: quem usa sprite espera que
+    cast aceite as mesmas coisas."""
+    parser = cli.build_parser()
+    subparsers = next(
+        a for a in parser._actions if getattr(a, "dest", None) == "command"
+    ).choices
+    flags = {
+        name: {opt for action in sub._actions for opt in action.option_strings if opt.startswith("--")}
+        for name, sub in subparsers.items()
+    }
+    missing = flags["sprite"] - flags["cast"] - {"--name"}
+    assert not missing, f"cast não aceita: {sorted(missing)}"
+
+
+def test_cast_no_trim_keeps_sprites_the_same_size(fake, tmp_path, capsys):
+    """Tamanho uniforme é o que um motor quer quando o atlas vira quadros."""
+    assert cli.main(["cast", "a", "b", "--out", str(tmp_path), "--no-trim", "--json"]) == 0
+    paths = json.loads(capsys.readouterr().out)["sprites"]
+    sizes = set()
+    for path in paths:
+        with Image.open(path) as img:
+            sizes.add(img.size)
+    assert len(sizes) == 1, f"tamanhos diferentes: {sizes}"

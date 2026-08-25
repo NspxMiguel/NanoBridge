@@ -498,6 +498,8 @@ async def cast(
     atlas: bool = True,
     formats: list[str] | None = None,
     atlas_name: str | None = None,
+    pixels: int | None = None,
+    zoom: int = 1,
     **kwargs,
 ) -> CastResult:
     """Gera vários sprites que pertencem ao mesmo jogo, e opcionalmente o atlas.
@@ -527,6 +529,8 @@ async def cast(
             style=style,
             size=size,
             palette=locked,
+            pixels=pixels,
+            zoom=zoom,
             out_dir=target,
             name=slugify(subject),
             **kwargs,
