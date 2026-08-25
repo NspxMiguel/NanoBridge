@@ -202,3 +202,84 @@ def test_extract_palette_rejects_a_bad_count():
 
 def test_perceptual_distance_is_zero_for_identical_colours():
     assert imaging._perceptual_distance((10, 20, 30), (10, 20, 30)) == 0
+
+
+def test_pixelate_hits_the_exact_requested_size():
+    src = Image.new("RGBA", (2816, 1536), (10, 20, 30, 255))
+    out = imaging.pixelate(src, 48)
+    assert max(out.size) == 48
+
+
+def test_pixelate_keeps_the_aspect_ratio():
+    src = Image.new("RGBA", (400, 200), (10, 20, 30, 255))
+    out = imaging.pixelate(src, 40)
+    assert out.size == (40, 20)
+
+
+def test_zoom_produces_a_perfect_grid():
+    """O ponto do comando: depois do zoom cada pixel da arte é um bloco
+    exatamente uniforme. Era isso que a redução direta não dava."""
+    src = Image.new("RGBA", (300, 300))
+    draw = ImageDraw.Draw(src)
+    for i in range(10):
+        draw.rectangle((i * 30, 0, i * 30 + 29, 299), fill=(i * 25, 100, 200, 255))
+
+    zoom = 6
+    out = imaging.pixelate(src, 10, zoom=zoom)
+    assert out.size == (60, 60)
+    for block_x in range(out.width // zoom):
+        for block_y in range(out.height // zoom):
+            corner = out.getpixel((block_x * zoom, block_y * zoom))
+            for dx in range(zoom):
+                for dy in range(zoom):
+                    assert out.getpixel((block_x * zoom + dx, block_y * zoom + dy)) == corner
+
+
+def test_pixelate_preserves_transparency():
+    src = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    ImageDraw.Draw(src).ellipse((25, 25, 75, 75), fill=(200, 30, 30, 255))
+    out = imaging.pixelate(src, 20)
+    assert out.getpixel((0, 0))[3] == 0
+    assert out.getpixel((10, 10))[3] > 0
+
+
+def test_pixelate_never_produces_a_zero_dimension():
+    src = Image.new("RGBA", (2000, 10), (1, 2, 3, 255))
+    out = imaging.pixelate(src, 8)
+    assert out.width >= 1 and out.height >= 1
+
+
+@pytest.mark.parametrize("pixels,zoom", [(0, 1), (-1, 1), (10, 0), (10, -2)])
+def test_pixelate_rejects_bad_arguments(pixels, zoom):
+    with pytest.raises(ValueError):
+        imaging.pixelate(Image.new("RGBA", (20, 20)), pixels, zoom=zoom)
+
+
+def test_quantize_matches_perceptually_not_in_raw_rgb():
+    """Bug real: em RGB cru o cinza #5F574F fica mais perto de um verde médio
+    do que o verde da paleta, e um slime verde na PICO-8 saía cinza."""
+    from nanobridge import palettes
+
+    green = Image.new("RGBA", (16, 16), (92, 192, 96, 255))
+    out = imaging.quantize_to_palette(green, palettes.resolve("pico8"))
+    chosen = out.getpixel((8, 8))[:3]
+    assert chosen != (95, 87, 79), "escolheu o cinza de novo"
+    assert chosen[1] > chosen[0] and chosen[1] > chosen[2], f"não é verde: {chosen}"
+
+
+def test_nearest_colour_prefers_hue_over_raw_distance():
+    grey = (95, 87, 79)
+    green = (0, 135, 81)
+    assert imaging.nearest_colour((92, 192, 96), [grey, green]) == green
+
+
+def test_quantize_is_fast_on_a_large_image():
+    """A quantização perceptual roda sobre 256 cores, não sobre os pixels."""
+    import time
+
+    from nanobridge import palettes
+
+    big = Image.new("RGBA", (1200, 900), (92, 192, 96, 255))
+    started = time.monotonic()
+    imaging.quantize_to_palette(big, palettes.resolve("endesga32"))
+    assert time.monotonic() - started < 2.0

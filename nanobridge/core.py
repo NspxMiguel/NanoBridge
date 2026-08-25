@@ -235,6 +235,8 @@ async def _run(
     retries: int = 2,
     palette: str | list[str] | None = None,
     dither: bool = False,
+    pixels: int | None = None,
+    zoom: int = 1,
 ) -> Generated:
     # A conferência do arquivo mora aqui, antes de escolher canal e antes de
     # subir o cliente do Gemini (que custa uma ida à rede): caminho errado tem
@@ -257,7 +259,7 @@ async def _run(
     # escrever qualquer arquivo: nome de paleta errado tem que falhar de cara,
     # não depois de meia dúzia de sprites gravados.
     colours = palettes.resolve(palette) if palette else None
-    needs_pillow = bool(transparent or trim or size or colours)
+    needs_pillow = bool(transparent or trim or size or colours or pixels or zoom > 1)
 
     paths: list[Path] = []
     for index, raw in enumerate(result.images):
@@ -270,6 +272,12 @@ async def _run(
                 img = imaging.trim(img, tol=tolerance)
             if size:
                 img = imaging.fit(img, size, pad=False)
+            if pixels:
+                # Antes da paleta: a média de área da pixelação inventa cores
+                # intermediárias, e quantizar depois as traz de volta pra régua.
+                img = imaging.pixelate(img, pixels, zoom=zoom)
+            elif zoom > 1:
+                img = img.resize((img.width * zoom, img.height * zoom), imaging.Image.NEAREST)
             if colours:
                 # Depois de redimensionar: reduzir a imagem mistura pixels
                 # vizinhos e reintroduz cores fora da paleta.

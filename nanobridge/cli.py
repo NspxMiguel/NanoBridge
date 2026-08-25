@@ -35,6 +35,12 @@ def _common(parser: argparse.ArgumentParser, *, post: bool = True) -> None:
             "ou lista #RRGGBB,#RRGGBB / lock to a palette",
         )
         parser.add_argument("--dither", action="store_true", help="difusão de erro ao quantizar")
+        parser.add_argument(
+            "--pixels",
+            type=int,
+            help="pixels de arte no lado maior: a grade fecha certo / art pixels on the long side",
+        )
+        parser.add_argument("--zoom", type=int, default=1, help="ampliar por inteiro / integer upscale")
         parser.add_argument("--retries", type=int, default=2, help="tentativas extras se vier texto")
         parser.set_defaults(transparent=None, trim=None)
 
@@ -53,6 +59,10 @@ def _post_kwargs(args: argparse.Namespace) -> dict:
         out["palette"] = args.palette
     if getattr(args, "dither", False):
         out["dither"] = True
+    if getattr(args, "pixels", None):
+        out["pixels"] = args.pixels
+    if getattr(args, "zoom", 1) and args.zoom > 1:
+        out["zoom"] = args.zoom
     if getattr(args, "retries", None) is not None:
         out["retries"] = args.retries
     return out
@@ -214,6 +224,12 @@ def _cmd_cut(args: argparse.Namespace) -> int:
         img = imaging.trim(img, tol=args.tolerance)
     if args.size:
         img = imaging.fit(img, args.size, pad=False)
+    if args.pixels:
+        img = imaging.pixelate(img, args.pixels, zoom=args.zoom)
+    elif args.zoom > 1:
+        img = img.resize((img.width * args.zoom, img.height * args.zoom), imaging.Image.NEAREST)
+    if args.palette:
+        img = imaging.quantize_to_palette(img, core.palettes.resolve(args.palette), dither=args.dither)
     out = Path(args.out) if args.out else Path(args.image).with_name(f"{Path(args.image).stem}-cut.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out)
@@ -405,6 +421,10 @@ def build_parser() -> argparse.ArgumentParser:
     cut.add_argument("--trim", action="store_true", default=True)
     cut.add_argument("--no-trim", dest="trim", action="store_false")
     cut.add_argument("--size", type=int)
+    cut.add_argument("--pixels", type=int, help="pixels de arte no lado maior")
+    cut.add_argument("--zoom", type=int, default=1)
+    cut.add_argument("--palette")
+    cut.add_argument("--dither", action="store_true")
     cut.add_argument("--tolerance", type=int, default=24)
     cut.set_defaults(func=_cmd_cut, is_async=False)
 

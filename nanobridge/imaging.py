@@ -286,6 +286,13 @@ def _palette_image(colours: list[tuple[int, int, int]]) -> Image.Image:
     return palette
 
 
+def nearest_colour(
+    colour: tuple[int, int, int], palette: list[tuple[int, int, int]]
+) -> tuple[int, int, int]:
+    """A cor da paleta mais próxima aos olhos, não em RGB cru."""
+    return min(palette, key=lambda candidate: _perceptual_distance(colour, candidate))
+
+
 def quantize_to_palette(
     img: Image.Image,
     colours: list[tuple[int, int, int]],
@@ -293,13 +300,19 @@ def quantize_to_palette(
 ) -> Image.Image:
     """Reescreve a imagem usando só as cores da paleta, preservando o alfa.
 
-    A quantização roda no C do Pillow, não em Python: um sprite de 2816×1536 são
-    4,3 milhões de pixels, e comparar cada um com 16 cores em laço Python levaria
-    dezenas de segundos.
+    O casamento é PERCEPTUAL, e isso não é preciosismo. O `quantize` do Pillow
+    casa em RGB cru, e em RGB cru o cinza #5F574F fica mais perto de um verde
+    médio (#5CC060) do que o verde da própria paleta (#008751), porque a
+    diferença no canal verde domina a conta. Na prática: um slime verde travado
+    na PICO-8 saía cinza-arroxeado.
 
-    `dither=False` por padrão porque pixel art quer cor chapada — o dithering do
-    Floyd-Steinberg espalha ruído de meio-tom que é exatamente o que se está
-    tentando evitar ao travar a paleta.
+    Para não pagar isso em velocidade, a imagem primeiro é reduzida a no máximo
+    256 cores no C do Pillow — um sprite de 2816×1536 são 4,3 milhões de pixels
+    e comparar cada um em Python levaria dezenas de segundos —, e só essas 256
+    são mapeadas na paleta, o que é instantâneo.
+
+    `dither=False` por padrão porque pixel art quer cor chapada: o dithering do
+    Floyd-Steinberg espalha o meio-tom que travar a paleta pretende remover.
     """
     if not colours:
         raise ValueError("empty palette")
@@ -307,8 +320,22 @@ def quantize_to_palette(
     rgba = img.convert("RGBA")
     alpha = rgba.getchannel("A")
     mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
-    quantized = rgba.convert("RGB").quantize(palette=_palette_image(colours), dither=mode)
-    out = quantized.convert("RGBA")
+
+    # Passo 1, no C: reduzir a no máximo 256 cores representativas.
+    reduced = rgba.convert("RGB").quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=mode)
+    source = reduced.getpalette() or []
+
+    # Passo 2, em Python mas sobre 256 entradas só: cada uma vira a cor
+    # perceptualmente mais próxima da paleta pedida.
+    # Uma imagem com poucas cores devolve uma paleta curta: percorrer 256
+    # entradas fixas estourava o índice.
+    mapped: list[int] = []
+    for index in range(len(source) // 3):
+        entry = (source[index * 3], source[index * 3 + 1], source[index * 3 + 2])
+        mapped.extend(nearest_colour(entry, colours))
+    reduced.putpalette(mapped)
+
+    out = reduced.convert("RGBA")
     out.putalpha(alpha)
     return out
 
@@ -375,3 +402,70 @@ def extract_palette(
         if len(out) == count:
             break
     return out
+
+
+def pixelate(img: Image.Image, pixels: int, zoom: int = 1) -> Image.Image:
+    """Reconstrói a arte com um número exato de pixels no lado maior.
+
+    Reduzir 2816px direto para 128px dá blocos de 4, 5 e 6 pixels misturados:
+    parece pixel art de longe e desmonta no zoom, porque a grade não fecha. Aqui
+    o lado maior vira exatamente `pixels`, então cada pixel da arte é um pixel de
+    verdade e a grade é perfeita por construção.
+
+    Não há detecção automática do tamanho do bloco de propósito. As tentativas
+    que fiz erravam nos próprios casos de controle — uma grade sintética de 8
+    saía como 9, um degradê sem grade nenhuma saía como 96 — e um detector
+    errado é pior do que nenhum: ele estraga a arte sem avisar. Quem sabe a
+    resolução que quer diz o número, e o resultado é sempre exato.
+
+    `zoom` amplia por um inteiro depois, com vizinho mais próximo, para ver o
+    sprite sem depender do zoom do visualizador — a grade continua fechando.
+    """
+    if pixels < 1:
+        raise ValueError("pixels must be >= 1")
+    if zoom < 1:
+        raise ValueError("zoom must be >= 1")
+
+    rgba = img.convert("RGBA")
+    longest = max(rgba.size)
+    ratio = pixels / longest
+    native = (max(1, round(rgba.width * ratio)), max(1, round(rgba.height * ratio)))
+    # BOX é a média de área: transforma um bloco numa cor só, sem inventar
+    # meio-tom nas bordas como o bilinear faria.
+    small = _resize_premultiplied(rgba, native)
+    if zoom > 1:
+        small = small.resize((small.width * zoom, small.height * zoom), Image.NEAREST)
+    return small
+
+
+def _resize_premultiplied(rgba: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Reduz com média de área sem sujar a cor com o que está transparente.
+
+    Um pixel transparente ainda carrega valores de RGB, e eles costumam ser
+    lixo — preto, branco, o que sobrou do fundo. Ao tirar a média de um bloco,
+    esse lixo entra na conta com o mesmo peso da cor de verdade, e a borda do
+    sprite ganha um halo: um slime verde saiu cinza-arroxeado.
+
+    Pré-multiplicar resolve: cada canal é pesado pelo alfa antes da média, e
+    desfeito depois. É o que qualquer compositor faz, e a razão de existir o
+    conceito de "premultiplied alpha".
+    """
+    red, green, blue, alpha = rgba.split()
+    premultiplied = [
+        Image.frombytes("L", rgba.size, bytes(
+            (c * a + 127) // 255
+            for c, a in zip(channel.tobytes(), alpha.tobytes(), strict=True)
+        )).resize(size, Image.BOX)
+        for channel in (red, green, blue)
+    ]
+    small_alpha = alpha.resize(size, Image.BOX)
+
+    alpha_bytes = small_alpha.tobytes()
+    restored = [
+        Image.frombytes("L", size, bytes(
+            min(255, (c * 255 + a // 2) // a) if a else 0
+            for c, a in zip(channel.tobytes(), alpha_bytes, strict=True)
+        ))
+        for channel in premultiplied
+    ]
+    return Image.merge("RGBA", (*restored, small_alpha))
