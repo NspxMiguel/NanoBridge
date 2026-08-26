@@ -81,6 +81,51 @@ one palette from the group, locks everyone to it, and packs the result into an
 atlas with the manifests you asked for. A subject that fails does not lose the
 others.
 
+### Animate a sprite you already have
+
+```bash
+nanobridge animate hero.png "raises its sword above its head and lowers it" --grid 4x1
+```
+
+The difference between "make an animation of a knight" and "animate **this**
+knight". `sheet` does the first — it draws a new character from the text, so the
+animation is not the sprite you approved. `animate` sends the sprite along as a
+reference and the prompt only describes the movement.
+
+### Several options at once
+
+```bash
+nanobridge variations "a treasure chest" -c 4 --palette sweetie16
+```
+
+Asking for one image and hoping is the expensive loop. This produces several in
+parallel, each pushed in a different direction, and writes a contact sheet — an
+agent gets all the options as one image and picks.
+
+### Textures that provably tile
+
+```bash
+nanobridge texture "rough cobblestone, mossy cracks" --preview
+nanobridge tile floor.png                 # measure any image
+nanobridge tile floor.png --repair        # stitch it
+```
+
+Models say "seamless" and often are not; the seam only shows up once four copies
+sit side by side. NanoBridge measures how far the image jumps when repeated —
+against the texture's own internal variation, so a noisy surface is not judged by
+the standard of a flat wall — stitches it when it fails, and reports both
+numbers. A pure gradient scores 119, a periodic pattern 1.57.
+
+### Normal maps
+
+```bash
+nanobridge normal hero.png
+```
+
+For 2D dynamic lighting in Godot, Phaser or Unity 2D. Derived from luminance, so
+it is not physically correct — a flat bright patch reads as raised — but that is
+how most tools do it and it lights a sprite well.
+
 ### Palettes
 
 ```bash
@@ -132,11 +177,12 @@ instead of naming files one by one.
 
 ## Use it from an agent
 
-The MCP server exposes `generate_cast`, `generate_sprite`,
-`generate_sprite_sheet`, `generate_image`, `generate_icon`, `edit_image`,
-`cut_image`, `slice_sheet`, `pack_atlas`, `list_atlas_formats`,
-`list_palettes`, `extract_palette`, `apply_palette`, `nanobridge_status` and
-`nanobridge_reset`.
+The MCP server exposes `generate_cast`, `generate_sprite`, `animate_sprite`,
+`generate_variations`, `generate_texture`, `generate_sprite_sheet`,
+`generate_image`, `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`,
+`pack_atlas`, `build_normal_map`, `check_tileable`, `repair_tileable`,
+`list_atlas_formats`, `list_palettes`, `extract_palette`, `apply_palette`,
+`nanobridge_status` and `nanobridge_reset`.
 
 `generate_cast` is the one to reach for when the task is "a set of characters"
 rather than one image — it is the whole coherence story in a single call.

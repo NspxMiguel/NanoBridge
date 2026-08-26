@@ -11,10 +11,12 @@ of billing per call.
 
 Two ways in, same engine:
 
-- **MCP tools** (`generate_cast`, `generate_sprite`, `generate_sprite_sheet`,
+- **MCP tools** (`generate_cast`, `generate_sprite`, `animate_sprite`,
+  `generate_variations`, `generate_texture`, `generate_sprite_sheet`,
   `generate_image`, `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`,
-  `pack_atlas`, `list_atlas_formats`, `list_palettes`, `extract_palette`,
-  `apply_palette`, `nanobridge_status`, `nanobridge_reset`).
+  `pack_atlas`, `build_normal_map`, `check_tileable`, `repair_tileable`,
+  `list_atlas_formats`, `list_palettes`, `extract_palette`, `apply_palette`,
+  `nanobridge_status`, `nanobridge_reset`).
   Every generating tool returns the picture back to you — look at it before
   calling the job done.
 - **CLI** (`nanobridge …`) for anything scripted, batched, or run from a Makefile.
@@ -41,6 +43,17 @@ line.
 
 Reach for `generate_sprite` when there is genuinely one thing to draw.
 
+## Picking the right tool
+
+| The ask | The tool |
+| --- | --- |
+| several characters that belong together | `generate_cast` |
+| animate something **already generated** | `animate_sprite` — not `generate_sprite_sheet`, which draws a new character from text and will not be the sprite you approved |
+| a few options to choose between | `generate_variations` — returns a contact sheet to look at |
+| a repeating surface | `generate_texture` — measures the seam instead of promising it |
+| lighting a 2D sprite | `build_normal_map` — local, no quota |
+| one sprite | `generate_sprite` |
+
 ## Doing it
 
 ```bash
@@ -51,6 +64,10 @@ nanobridge sheet "a green slime" --grid 4x2 \
 nanobridge icon "a compass rose" --style flat
 nanobridge edit hero.png "make the sky stormy, keep everything else"
 nanobridge cast "a knight" "a rogue" "a wizard" -f godot      # one coherent set
+nanobridge animate hero.png "raises its sword" --grid 4x1    # keeps THAT character
+nanobridge variations "a treasure chest" -c 4                # options to pick from
+nanobridge texture "cobblestone" --preview                   # seam measured
+nanobridge normal hero.png                                   # local, no quota
 nanobridge palettes                                          # what is built in
 nanobridge cut photo.jpg --transparent --trim --size 256      # local, no quota
 nanobridge slice sheet.png --grid 6x1 --size 96                # local, no quota
