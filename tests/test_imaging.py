@@ -332,3 +332,35 @@ def test_make_tileable_rejects_a_bad_blend(blend):
 
 def test_seam_error_on_a_tiny_image_does_not_explode():
     assert imaging.seam_error(Image.new("RGB", (2, 2))) == {"horizontal": 0.0, "vertical": 0.0}
+
+
+def test_normal_map_uses_the_opengl_rest_convention():
+    """Superfície plana aponta para a câmera: (128, 128, 255)."""
+    flat = Image.new("RGBA", (32, 32), (120, 120, 120, 255))
+    out = imaging.normal_map(flat)
+    r, g, b, _ = out.getpixel((16, 16))
+    assert abs(r - 128) <= 2 and abs(g - 128) <= 2
+    assert b > 240
+
+
+def test_normal_map_reacts_to_a_slope():
+    ramp = Image.new("RGBA", (64, 32), (0, 0, 0, 255))
+    for x in range(64):
+        for y in range(32):
+            ramp.putpixel((x, y), (x * 4, x * 4, x * 4, 255))
+    out = imaging.normal_map(ramp)
+    r, _, _, _ = out.getpixel((32, 16))
+    assert r != 128, "uma rampa tem que inclinar a normal"
+
+
+def test_normal_map_preserves_alpha():
+    src = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
+    ImageDraw.Draw(src).ellipse((8, 8, 24, 24), fill=(200, 200, 200, 255))
+    out = imaging.normal_map(src)
+    assert out.getpixel((0, 0))[3] == 0
+    assert out.getpixel((16, 16))[3] == 255
+
+
+def test_normal_map_rejects_a_bad_strength():
+    with pytest.raises(ValueError):
+        imaging.normal_map(Image.new("RGBA", (8, 8)), strength=0)

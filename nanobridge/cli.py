@@ -253,6 +253,13 @@ async def _cmd_texture(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_normal(args: argparse.Namespace) -> int:
+    """Mapa de normais para luz dinâmica em 2D. Local, sem cota."""
+    out = core.build_normal_map(args.image, out=args.out, strength=args.strength, blur=args.blur)
+    print(t("gen.saved", path=out))
+    return 0
+
+
 def _cmd_tile(args: argparse.Namespace) -> int:
     """Medir, consertar e pré-visualizar a emenda de uma imagem local."""
     if args.repair:
@@ -549,6 +556,13 @@ def build_parser() -> argparse.ArgumentParser:
     texture.add_argument("--preview", action="store_true", help="gravar uma grade 3x3")
     _common(texture)
     texture.set_defaults(func=_cmd_texture, is_async=True)
+
+    normal = sub.add_parser("normal", help="mapa de normais para luz 2D / normal map for 2D lighting")
+    normal.add_argument("image")
+    normal.add_argument("-o", "--out")
+    normal.add_argument("--strength", type=float, default=2.0)
+    normal.add_argument("--blur", type=float, default=1.0)
+    normal.set_defaults(func=_cmd_normal, is_async=False)
 
     tile = sub.add_parser(
         "tile", help="medir/consertar a emenda / measure or repair a seam"

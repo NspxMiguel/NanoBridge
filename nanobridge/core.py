@@ -827,3 +827,15 @@ async def variations(
         canvas.save(sheet_path)
 
     return Variations(paths=paths, contact_sheet=sheet_path, failed=failed)
+
+
+def build_normal_map(
+    image: str | Path, *, out: Path | None = None, strength: float = 2.0, blur: float = 1.0
+) -> Path:
+    """Mapa de normais de um sprite, para luz dinâmica em jogo 2D. Local, sem cota."""
+    source = existing_path(image)
+    result = imaging.normal_map(imaging.open_image(source), strength=strength, blur=blur)
+    target = Path(out) if out else source.with_name(f"{source.stem}-normal.png")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    result.save(target)
+    return target

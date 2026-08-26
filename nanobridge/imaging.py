@@ -555,3 +555,60 @@ def make_tileable(img: Image.Image, blend: float = 0.12) -> Image.Image:
     mask = mask.filter(ImageFilter.GaussianBlur(radius=max(1, band_x // 2)))
 
     return Image.composite(patch, shifted, mask)
+
+
+def normal_map(img: Image.Image, strength: float = 2.0, blur: float = 1.0) -> Image.Image:
+    """Um mapa de normais derivado da luminância, para iluminação 2D.
+
+    Motores 2D com luz dinâmica (Godot, Phaser, Unity 2D) querem, ao lado do
+    sprite, um mapa que diga para que lado cada pixel "aponta". Desenhar isso à
+    mão é trabalhoso, e o modelo não gera de forma confiável — mas dá para
+    derivar: onde a luminância sobe rápido há uma inclinação, e a direção dela é
+    a normal.
+
+    Não é um mapa fisicamente correto — a luminância confunde "claro" com "alto",
+    então uma parte clara e plana vira uma elevação. Para sprite iluminado em
+    jogo 2D isso é aceitável e é como a maioria das ferramentas faz; para
+    superfície real, escaneada, não é.
+
+    O alfa é preservado: fora do sprite não há normal nenhuma.
+    """
+    if strength <= 0:
+        raise ValueError("strength must be > 0")
+
+    rgba = img.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    # Um borrão leve tira o degrau do anti-aliasing, que viraria uma parede
+    # vertical no mapa e acenderia a borda inteira.
+    height = rgba.convert("L")
+    if blur > 0:
+        height = height.filter(ImageFilter.GaussianBlur(radius=blur))
+
+    width, tall = height.size
+    pixels = height.load()
+    out = Image.new("RGB", (width, tall))
+    target = out.load()
+
+    for y in range(tall):
+        for x in range(width):
+            left = pixels[max(0, x - 1), y]
+            right = pixels[min(width - 1, x + 1), y]
+            up = pixels[x, max(0, y - 1)]
+            down = pixels[x, min(tall - 1, y + 1)]
+
+            # Sobel simplificado: a inclinação em cada eixo.
+            dx = (right - left) / 255.0 * strength
+            dy = (down - up) / 255.0 * strength
+
+            # A normal é perpendicular à inclinação, normalizada para caber em
+            # 0..255 com o repouso em (128, 128, 255) — a convenção OpenGL.
+            length = (dx * dx + dy * dy + 1.0) ** 0.5
+            target[x, y] = (
+                int((-dx / length * 0.5 + 0.5) * 255),
+                int((-dy / length * 0.5 + 0.5) * 255),
+                int((1.0 / length * 0.5 + 0.5) * 255),
+            )
+
+    result = out.convert("RGBA")
+    result.putalpha(alpha)
+    return result

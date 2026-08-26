@@ -391,6 +391,28 @@ async def generate_texture(
 
 @mcp.tool()
 @handled
+def build_normal_map(
+    image: str, out: str | None = None, strength: float = 2.0, blur: float = 1.0
+) -> list[TextContent | ImageContent]:
+    """Derive a normal map from a sprite, for 2D dynamic lighting. Local, no quota.
+
+    Godot, Phaser and Unity 2D take a normal map alongside the sprite to light
+    it. Drawing one by hand is work and the model does not produce them
+    reliably, but it can be derived: where luminance rises steeply there is a
+    slope, and its direction is the normal.
+
+    It is not physically correct — luminance conflates 'bright' with 'high', so
+    a flat bright patch reads as raised. For a lit 2D sprite that is fine and is
+    what most tools do; for a real scanned surface it is not.
+    """
+    target = core.build_normal_map(
+        image, out=Path(out).expanduser() if out else None, strength=strength, blur=blur
+    )
+    return [TextContent(type="text", text=json.dumps({"path": str(target)})), _preview(target)]
+
+
+@mcp.tool()
+@handled
 def check_tileable(image: str, preview: bool = False, times: int = 3) -> str:
     """Measure how badly an image jumps when repeated. Local, no quota.
 
