@@ -59,6 +59,18 @@ SHEET_TEMPLATE = (
     "no numbering, no captions, no shadow, no border."
 )
 
+#: Textura que repete: o modelo não consegue garantir isso sozinho, mas pedir
+#: melhora bastante o material de partida — e o resto a gente mede e conserta.
+TEXTURE_TEMPLATE = (
+    "A seamless tileable texture of {subject}. {style}. "
+    "Top-down, flat even lighting, no perspective, no vignette, no shadows "
+    "cast from outside the frame. "
+    "The pattern must continue across the edges: what leaves the right edge "
+    "comes back on the left, what leaves the bottom comes back on the top. "
+    "Fill the whole frame edge to edge. No border, no frame, no text, no "
+    "watermark, no single centred object."
+)
+
 ICON_TEMPLATE = (
     "A single app icon of {subject}. {style}. "
     "Centred, square composition, flat solid pure white background (#FFFFFF), "
@@ -636,4 +648,102 @@ async def animate(
         reference=source,
         name=kwargs.pop("name", None) or f"anim-{source.stem}",
         **kwargs,
+    )
+
+
+#: Acima disto a emenda salta mais que a variação natural da textura e alguém
+#: vai enxergar a grade no jogo. Medido: um degradê puro dá 119, um padrão que
+#: já repete dá ~1.6.
+SEAM_THRESHOLD = 3.0
+
+
+@dataclass
+class TextureResult:
+    """Uma textura, com a emenda medida antes e depois do conserto."""
+
+    path: Path
+    seam: dict[str, float] = field(default_factory=dict)
+    seam_before: dict[str, float] = field(default_factory=dict)
+    repaired: bool = False
+    preview: Path | None = None
+
+
+def tile_preview(image: str | Path, times: int = 3, out: Path | None = None) -> Path:
+    """Repete a textura numa grade para a emenda ficar óbvia a olho nu.
+
+    O número diz se a emenda existe; esta imagem diz o que ela parece. As duas
+    coisas são necessárias — um limiar sozinho nunca convence ninguém.
+    """
+    source = existing_path(image)
+    img = imaging.open_image(source)
+    canvas = imaging.Image.new("RGBA", (img.width * times, img.height * times))
+    for row in range(times):
+        for col in range(times):
+            canvas.paste(img, (col * img.width, row * img.height))
+    target = Path(out) if out else source.with_name(f"{source.stem}-tiled.png")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(target)
+    return target
+
+
+def check_tileable(image: str | Path) -> dict[str, float]:
+    """A emenda medida de uma imagem que já existe."""
+    return imaging.seam_error(imaging.open_image(existing_path(image)))
+
+
+def repair_tileable(image: str | Path, *, out: Path | None = None, blend: float = 0.12) -> Path:
+    """Costura uma imagem existente para ela repetir sem emenda."""
+    source = existing_path(image)
+    fixed = imaging.make_tileable(imaging.open_image(source), blend=blend)
+    target = Path(out) if out else source.with_name(f"{source.stem}-tileable.png")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fixed.save(target)
+    return target
+
+
+async def texture(
+    subject: str,
+    *,
+    style: str | None = None,
+    repair: bool = True,
+    threshold: float = SEAM_THRESHOLD,
+    preview: bool = False,
+    blend: float = 0.12,
+    **kwargs,
+) -> TextureResult:
+    """Gera uma textura que repete, e PROVA que repete.
+
+    O modelo diz que a textura é "seamless" e frequentemente não é — a emenda só
+    aparece quando alguém põe quatro cópias lado a lado no jogo. Aqui a emenda é
+    medida; se estourar o limiar, a imagem é costurada e medida de novo, e os
+    dois números voltam no resultado.
+
+    É a diferença entre "pedi seamless" e "está seamless".
+    """
+    kwargs.setdefault("name", f"tex-{slugify(subject)}")
+    prompt = TEXTURE_TEMPLATE.format(subject=subject, style=style_text(style or "realistic"))
+    generated = await _run(prompt, transparent=False, trim=False, **kwargs)
+
+    path = generated.paths[0]
+    before = imaging.seam_error(imaging.open_image(path))
+    worst = max(before.values()) if before else 0.0
+    repaired = False
+
+    if repair and worst > threshold:
+        fixed = imaging.make_tileable(imaging.open_image(path), blend=blend)
+        # Sobrescreve como PNG: a textura crua costuma vir em JPEG, e salvar a
+        # versão consertada por cima do JPEG reintroduz artefato na emenda.
+        path = path.with_suffix(".png")
+        fixed.save(path)
+        if path != generated.paths[0]:
+            generated.paths[0].unlink(missing_ok=True)
+        repaired = True
+
+    after = imaging.seam_error(imaging.open_image(path))
+    return TextureResult(
+        path=path,
+        seam=after,
+        seam_before=before,
+        repaired=repaired,
+        preview=tile_preview(path) if preview else None,
     )

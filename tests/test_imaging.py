@@ -283,3 +283,52 @@ def test_quantize_is_fast_on_a_large_image():
     started = time.monotonic()
     imaging.quantize_to_palette(big, palettes.resolve("endesga32"))
     assert time.monotonic() - started < 2.0
+
+
+def _gradient(size=(120, 120)):
+    img = Image.new("RGB", size)
+    for x in range(size[0]):
+        for y in range(size[1]):
+            img.putpixel((x, y), (min(255, x * 2), 80, 120))
+    return img
+
+
+def _periodic(size=(120, 120)):
+    import math
+
+    img = Image.new("RGB", size)
+    for x in range(size[0]):
+        for y in range(size[1]):
+            v = int(127 + 120 * math.sin(2 * math.pi * x / size[0]) * math.sin(2 * math.pi * y / size[1]))
+            img.putpixel((x, y), (v, v, v))
+    return img
+
+
+def test_seam_error_is_large_where_the_edges_do_not_meet():
+    assert imaging.seam_error(_gradient())["horizontal"] > 20
+
+
+def test_seam_error_is_small_on_something_that_already_tiles():
+    seam = imaging.seam_error(_periodic())
+    assert seam["horizontal"] < 3 and seam["vertical"] < 3
+
+
+def test_make_tileable_actually_reduces_the_seam():
+    before = imaging.seam_error(_gradient())["horizontal"]
+    after = imaging.seam_error(imaging.make_tileable(_gradient()))["horizontal"]
+    assert after < before / 10, f"antes {before}, depois {after}"
+
+
+def test_make_tileable_keeps_the_size():
+    out = imaging.make_tileable(_gradient((80, 60)))
+    assert out.size == (80, 60)
+
+
+@pytest.mark.parametrize("blend", [0, -0.1, 0.5, 1.0])
+def test_make_tileable_rejects_a_bad_blend(blend):
+    with pytest.raises(ValueError):
+        imaging.make_tileable(_gradient(), blend=blend)
+
+
+def test_seam_error_on_a_tiny_image_does_not_explode():
+    assert imaging.seam_error(Image.new("RGB", (2, 2))) == {"horizontal": 0.0, "vertical": 0.0}

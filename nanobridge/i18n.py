@@ -108,6 +108,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "sheet sliced into {n} frames ({cols}x{rows}) at {path}",
     },
     "sheet.gif": {"pt": "GIF montado: {path}", "en": "GIF assembled: {path}"},
+    "tex.seam": {
+        "pt": "emenda: horizontal {h}, vertical {v} (abaixo de {limit} ninguém vê)",
+        "en": "seam: horizontal {h}, vertical {v} (under {limit} nobody sees it)",
+    },
+    "tex.repaired": {
+        "pt": "emenda costurada: era {before}, ficou {after}",
+        "en": "seam repaired: was {before}, now {after}",
+    },
+    "tex.clean": {"pt": "já repetia, não mexi", "en": "already tiled, left alone"},
     "cast.done": {
         "pt": "elenco com {n} sprites em {path}",
         "en": "cast of {n} sprites at {path}",

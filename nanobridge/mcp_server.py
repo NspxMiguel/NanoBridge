@@ -299,6 +299,90 @@ async def generate_sprite_sheet(
 
 @mcp.tool()
 @handled
+async def generate_texture(
+    subject: str,
+    style: str = "realistic",
+    repair: bool = True,
+    preview: bool = False,
+    palette: str | None = None,
+    out_dir: str | None = None,
+    name: str | None = None,
+    backend: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Generate a tileable texture and *prove* it tiles.
+
+    Models say "seamless" and often are not — the seam only shows up once four
+    copies sit side by side in the game. This measures the seam against the
+    texture's own internal variation, stitches the image if it fails, and
+    returns both numbers so the claim is checkable rather than taken on trust.
+
+    `preview=True` also writes a 3x3 tiling, because a threshold convinces
+    nobody on its own.
+    """
+    result = await core.texture(
+        subject,
+        style=style,
+        repair=repair,
+        preview=preview,
+        palette=palette,
+        **_kwargs(out_dir, name, backend, None),
+    )
+    summary = {
+        "path": str(result.path),
+        "seam": {k: round(v, 3) for k, v in result.seam.items()},
+        "seam_before": {k: round(v, 3) for k, v in result.seam_before.items()},
+        "repaired": result.repaired,
+        "threshold": core.SEAM_THRESHOLD,
+        "preview": str(result.preview) if result.preview else None,
+    }
+    out: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(summary, ensure_ascii=False))
+    ]
+    out.append(_preview(result.preview or result.path))
+    return out
+
+
+@mcp.tool()
+@handled
+def check_tileable(image: str, preview: bool = False, times: int = 3) -> str:
+    """Measure how badly an image jumps when repeated. Local, no quota.
+
+    Returns the seam on each axis as a ratio against the image's own internal
+    variation, so a noisy texture is not judged by the standard of a flat wall.
+    Under `SEAM_THRESHOLD` nobody sees it.
+    """
+    seam = core.check_tileable(image)
+    body = {
+        "seam": {k: round(v, 3) for k, v in seam.items()},
+        "threshold": core.SEAM_THRESHOLD,
+        "tiles_cleanly": max(seam.values()) <= core.SEAM_THRESHOLD,
+    }
+    if preview:
+        body["preview"] = str(core.tile_preview(image, times=times))
+    return json.dumps(body, ensure_ascii=False)
+
+
+@mcp.tool()
+@handled
+def repair_tileable(
+    image: str, out: str | None = None, blend: float = 0.12
+) -> list[TextContent | ImageContent]:
+    """Stitch an existing image so it repeats without a visible seam. Local, no quota."""
+    before = core.check_tileable(image)
+    target = core.repair_tileable(image, out=Path(out).expanduser() if out else None, blend=blend)
+    after = core.check_tileable(target)
+    return [
+        TextContent(type="text", text=json.dumps({
+            "path": str(target),
+            "seam_before": {k: round(v, 3) for k, v in before.items()},
+            "seam": {k: round(v, 3) for k, v in after.items()},
+        }, ensure_ascii=False)),
+        _preview(target),
+    ]
+
+
+@mcp.tool()
+@handled
 async def animate_sprite(
     image: str,
     action: str = "a simple looping idle animation",

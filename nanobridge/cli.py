@@ -177,6 +177,65 @@ async def _cmd_edit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _seam_line(seam: dict) -> str:
+    return t(
+        "tex.seam",
+        h=f"{seam.get('horizontal', 0):.2f}",
+        v=f"{seam.get('vertical', 0):.2f}",
+        limit=core.SEAM_THRESHOLD,
+    )
+
+
+async def _cmd_texture(args: argparse.Namespace) -> int:
+    """Textura que repete, com a emenda medida — não só prometida."""
+    result = await core.texture(
+        args.subject,
+        style=args.style,
+        repair=not args.no_repair,
+        threshold=args.threshold,
+        preview=args.preview,
+        blend=args.blend,
+        **_run_kwargs(args),
+    )
+    if args.json:
+        print(json.dumps({
+            "path": str(result.path),
+            "seam": result.seam,
+            "seam_before": result.seam_before,
+            "repaired": result.repaired,
+            "preview": str(result.preview) if result.preview else None,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    print(t("gen.saved", path=result.path))
+    if result.repaired:
+        print(t("tex.repaired",
+                before=f"{max(result.seam_before.values()):.2f}",
+                after=f"{max(result.seam.values()):.2f}"))
+    else:
+        print(t("tex.clean"))
+    print(_seam_line(result.seam))
+    if result.preview:
+        print(t("gen.saved", path=result.preview))
+    return 0
+
+
+def _cmd_tile(args: argparse.Namespace) -> int:
+    """Medir, consertar e pré-visualizar a emenda de uma imagem local."""
+    if args.repair:
+        out = core.repair_tileable(args.image, out=args.out, blend=args.blend)
+        print(t("gen.saved", path=out))
+        print(_seam_line(core.check_tileable(out)))
+        return 0
+    seam = core.check_tileable(args.image)
+    if args.json:
+        print(json.dumps(seam, indent=2))
+    else:
+        print(_seam_line(seam))
+    if args.preview:
+        print(t("gen.saved", path=core.tile_preview(args.image, times=args.times)))
+    return 0
+
+
 async def _cmd_animate(args: argparse.Namespace) -> int:
     """Anima um sprite que já existe, mantendo o personagem."""
     result = await core.animate(
@@ -425,6 +484,30 @@ def build_parser() -> argparse.ArgumentParser:
     sheet.add_argument("--no-gif", action="store_true")
     _common(sheet)
     sheet.set_defaults(func=_cmd_sheet, is_async=True)
+
+    texture = sub.add_parser(
+        "texture", help="textura que repete, emenda medida / verified tileable texture"
+    )
+    texture.add_argument("subject")
+    texture.add_argument("-s", "--style", default="realistic")
+    texture.add_argument("--no-repair", action="store_true")
+    texture.add_argument("--threshold", type=float, default=core.SEAM_THRESHOLD)
+    texture.add_argument("--blend", type=float, default=0.12)
+    texture.add_argument("--preview", action="store_true", help="gravar uma grade 3x3")
+    _common(texture)
+    texture.set_defaults(func=_cmd_texture, is_async=True)
+
+    tile = sub.add_parser(
+        "tile", help="medir/consertar a emenda / measure or repair a seam"
+    )
+    tile.add_argument("image")
+    tile.add_argument("--repair", action="store_true")
+    tile.add_argument("--preview", action="store_true")
+    tile.add_argument("--times", type=int, default=3)
+    tile.add_argument("--blend", type=float, default=0.12)
+    tile.add_argument("-o", "--out")
+    tile.add_argument("--json", action="store_true")
+    tile.set_defaults(func=_cmd_tile, is_async=False)
 
     animate = sub.add_parser("animate", help="animar um sprite existente / animate an existing sprite")
     animate.add_argument("image")

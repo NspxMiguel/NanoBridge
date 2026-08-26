@@ -530,3 +530,66 @@ def test_sheet_without_a_reference_still_uses_the_text_template(tmp_path):
 def test_animate_rejects_a_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError):
         asyncio.run(core.animate(tmp_path / "nope.png", "waves", backend=FakeBackend()))
+
+
+def test_texture_measures_the_seam_and_repairs_it(tmp_path):
+    """O modelo diz 'seamless' e frequentemente não é — aqui é medido."""
+    import io as _io
+
+    grad = Image.new("RGB", (120, 120))
+    for x in range(120):
+        for y in range(120):
+            grad.putpixel((x, y), (min(255, x * 2), 80, 120))
+    buf = _io.BytesIO()
+    grad.save(buf, format="PNG")
+
+    result = asyncio.run(
+        core.texture("stone", backend=FakeBackend(images=[buf.getvalue()]), out_dir=tmp_path)
+    )
+    assert result.repaired, "emenda ruim tinha que ser costurada"
+    assert max(result.seam.values()) < max(result.seam_before.values()) / 10
+    assert result.path.exists() and result.path.suffix == ".png"
+
+
+def test_texture_leaves_a_good_seam_alone(tmp_path):
+    import io as _io
+    import math
+
+    per = Image.new("RGB", (120, 120))
+    for x in range(120):
+        for y in range(120):
+            v = int(127 + 120 * math.sin(2 * math.pi * x / 120) * math.sin(2 * math.pi * y / 120))
+            per.putpixel((x, y), (v, v, v))
+    buf = _io.BytesIO()
+    per.save(buf, format="PNG")
+
+    result = asyncio.run(
+        core.texture("waves", backend=FakeBackend(images=[buf.getvalue()]), out_dir=tmp_path)
+    )
+    assert not result.repaired, "não pode borrar uma textura que já repetia"
+
+
+def test_texture_prompt_asks_for_edge_continuity():
+    prompt = core.TEXTURE_TEMPLATE.format(subject="stone", style="x")
+    assert "continue across the edges" in prompt
+    assert "no single centred object" in prompt
+
+
+def test_tile_preview_repeats_the_image(tmp_path):
+    src = tmp_path / "t.png"
+    Image.new("RGBA", (20, 20), (10, 20, 30, 255)).save(src)
+    out = core.tile_preview(src, times=3)
+    with Image.open(out) as img:
+        assert img.size == (60, 60)
+
+
+def test_check_and_repair_work_on_any_file(tmp_path):
+    src = tmp_path / "g.png"
+    grad = Image.new("RGB", (100, 100))
+    for x in range(100):
+        for y in range(100):
+            grad.putpixel((x, y), (min(255, x * 3), 40, 60))
+    grad.save(src)
+    before = core.check_tileable(src)["horizontal"]
+    fixed = core.repair_tileable(src)
+    assert core.check_tileable(fixed)["horizontal"] < before / 5

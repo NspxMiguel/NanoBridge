@@ -12,7 +12,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 
 # Um sprite raramente passa disso; acima daqui o flood fill fica caro à toa.
 _MASK_MAX_SIDE = 512
@@ -469,3 +469,89 @@ def _resize_premultiplied(rgba: Image.Image, size: tuple[int, int]) -> Image.Ima
         for channel in premultiplied
     ]
     return Image.merge("RGBA", (*restored, small_alpha))
+
+
+def seam_error(img: Image.Image) -> dict[str, float]:
+    """Quanto a imagem "salta" quando é repetida lado a lado.
+
+    Uma textura que repete tem a coluna da direita continuando na coluna da
+    esquerda, e a linha de baixo continuando na de cima. Se não continua,
+    aparece uma costura visível no jogo.
+
+    Medir é comparar a borda com a borda oposta, e comparar isso com o quanto a
+    imagem já varia internamente: uma textura de ruído varia muito em todo
+    lugar, e cobrar dela a mesma continuidade de uma parede lisa seria injusto.
+    O número devolvido é a razão entre as duas — abaixo de 1 a emenda é mais
+    suave que a variação normal da imagem, e ninguém vê.
+    """
+    rgb = img.convert("RGB")
+    width, height = rgb.size
+    if width < 4 or height < 4:
+        return {"horizontal": 0.0, "vertical": 0.0}
+
+    pixels = rgb.load()
+
+    def mean_delta(pairs) -> float:
+        total = 0.0
+        count = 0
+        for (ax, ay), (bx, by) in pairs:
+            a, b = pixels[ax, ay], pixels[bx, by]
+            total += abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+            count += 1
+        return total / max(1, count)
+
+    # A emenda: última coluna contra a primeira, última linha contra a primeira.
+    horizontal_seam = mean_delta(((width - 1, y), (0, y)) for y in range(height))
+    vertical_seam = mean_delta(((x, height - 1), (x, 0)) for x in range(width))
+
+    # A referência: vizinhos internos, que é a variação normal da textura.
+    horizontal_normal = mean_delta(
+        ((x, y), (x + 1, y)) for y in range(height) for x in range(0, width - 1, 7)
+    )
+    vertical_normal = mean_delta(((x, y), (x, y + 1)) for x in range(width) for y in range(0, height - 1, 7))
+
+    return {
+        "horizontal": horizontal_seam / max(1.0, horizontal_normal),
+        "vertical": vertical_seam / max(1.0, vertical_normal),
+    }
+
+
+def make_tileable(img: Image.Image, blend: float = 0.12) -> Image.Image:
+    """Costura a imagem consigo mesma para que ela repita sem emenda.
+
+    O truque é o mesmo que editores de textura usam há décadas: deslocar a
+    imagem em meia largura e meia altura leva as bordas para o meio, onde dá
+    para misturá-las com o entorno. O que era a emenda vira uma transição
+    suave, e as novas bordas — que antes eram o meio da imagem — já casam por
+    construção.
+
+    `blend` é a largura da faixa misturada, em fração do lado. Faixa demais
+    borra o desenho; de menos não cobre a emenda.
+    """
+    if not 0 < blend < 0.5:
+        raise ValueError("blend must be between 0 and 0.5")
+
+    rgba = img.convert("RGBA")
+    width, height = rgba.size
+    half_x, half_y = width // 2, height // 2
+
+    # Deslocar por metade em cada eixo: as bordas antigas encontram-se no centro.
+    shifted = Image.new("RGBA", (width, height))
+    shifted.paste(rgba.crop((half_x, half_y, width, height)), (0, 0))
+    shifted.paste(rgba.crop((0, half_y, half_x, height)), (width - half_x, 0))
+    shifted.paste(rgba.crop((half_x, 0, width, half_y)), (0, height - half_y))
+    shifted.paste(rgba.crop((0, 0, half_x, half_y)), (width - half_x, height - half_y))
+
+    # Misturar a cruz central com a imagem original deslocada de novo, que traz
+    # conteúdo vizinho plausível para cima da costura.
+    band_x = max(2, int(width * blend))
+    band_y = max(2, int(height * blend))
+    patch = shifted.filter(ImageFilter.GaussianBlur(radius=max(1, band_x // 3)))
+
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rectangle((half_x - band_x, 0, half_x + band_x, height), fill=255)
+    draw.rectangle((0, half_y - band_y, width, half_y + band_y), fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=max(1, band_x // 2)))
+
+    return Image.composite(patch, shifted, mask)
