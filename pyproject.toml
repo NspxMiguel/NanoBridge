@@ -52,4 +52,4 @@ ignore = [
 # se escreve uma dimensão ("2816×1536") num comentário.
 "nanobridge/imaging.py" = ["RUF001", "RUF002"]
 # Canal falso de teste: atributo mutável de classe é o ponto, e o × idem.
-"tests/*" = ["RUF012", "RUF001"]
+"tests/*" = ["RUF012", "RUF001", "RUF002"]
