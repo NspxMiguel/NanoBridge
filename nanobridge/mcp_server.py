@@ -299,6 +299,42 @@ async def generate_sprite_sheet(
 
 @mcp.tool()
 @handled
+async def animate_sprite(
+    image: str,
+    action: str = "a simple looping idle animation",
+    grid: str = "4x1",
+    fps: int = 10,
+    frame_size: int | None = 128,
+    palette: str | None = None,
+    out_dir: str | None = None,
+    name: str | None = None,
+    backend: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Animate a sprite that already exists, keeping that exact character.
+
+    This is the difference between "make an animation of a knight" and "animate
+    THIS knight". `generate_sprite_sheet` does the first: it draws a new
+    character from the text, so the animation is not the sprite you already
+    approved. Here the image goes along as a reference and the text only
+    describes the movement.
+
+    Reach for this whenever the animation should be of something already
+    generated — a cast member, an edited sprite, art from anywhere on disk.
+    """
+    result = await core.animate(
+        image,
+        action,
+        grid=grid,
+        fps=fps,
+        frame_size=frame_size,
+        palette=palette,
+        **_kwargs(out_dir, name, backend, None),
+    )
+    return _respond(result)
+
+
+@mcp.tool()
+@handled
 async def edit_image(
     image: str,
     prompt: str,

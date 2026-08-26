@@ -177,6 +177,21 @@ async def _cmd_edit(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_animate(args: argparse.Namespace) -> int:
+    """Anima um sprite que já existe, mantendo o personagem."""
+    result = await core.animate(
+        args.image,
+        args.action,
+        grid=args.grid,
+        fps=args.fps,
+        frame_size=args.frame_size,
+        gif=not args.no_gif,
+        **_run_kwargs(args),
+    )
+    _report(result, args)
+    return 0
+
+
 async def _cmd_sheet(args: argparse.Namespace) -> int:
     result = await core.sheet(
         args.subject,
@@ -410,6 +425,16 @@ def build_parser() -> argparse.ArgumentParser:
     sheet.add_argument("--no-gif", action="store_true")
     _common(sheet)
     sheet.set_defaults(func=_cmd_sheet, is_async=True)
+
+    animate = sub.add_parser("animate", help="animar um sprite existente / animate an existing sprite")
+    animate.add_argument("image")
+    animate.add_argument("action", nargs="?", default="a simple looping idle animation")
+    animate.add_argument("-g", "--grid", default="4x1")
+    animate.add_argument("--fps", type=int, default=10)
+    animate.add_argument("--frame-size", type=int)
+    animate.add_argument("--no-gif", action="store_true")
+    _common(animate)
+    animate.set_defaults(func=_cmd_animate, is_async=True)
 
     slice_ = sub.add_parser("slice", help="cortar folha local / slice a local sheet")
     slice_.add_argument("image")

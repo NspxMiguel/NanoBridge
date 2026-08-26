@@ -33,6 +33,23 @@ SPRITE_TEMPLATE = (
     "no text, no watermark, no border, no frame, no mockup, no extra objects."
 )
 
+#: Animar um personagem que JÁ EXISTE é outro pedido: a imagem de referência
+#: manda, e o texto só descreve o movimento. Sem dizer isso com todas as letras
+#: o modelo redesenha o personagem do zero "inspirado" na referência, e a
+#: animação fica de outro boneco.
+ANIMATE_TEMPLATE = (
+    "Take the character in the attached image and animate it. "
+    "Lay the animation out as an exact {cols}x{rows} grid ({total} frames, read "
+    "left to right, top to bottom). The animation is: {action}. "
+    "KEEP THE SAME CHARACTER in every frame — same design, same colours, same "
+    "proportions, same outfit, same art style as the attached image. Do not "
+    "redesign it, do not restyle it, do not change its palette. Only the pose "
+    "changes between frames. "
+    "Every frame is the same size, same scale and same centring, evenly spaced. "
+    "Flat solid pure white background (#FFFFFF) behind every frame, no grid lines, "
+    "no numbering, no captions, no shadow, no border."
+)
+
 SHEET_TEMPLATE = (
     "A sprite sheet of {subject}, laid out as an exact {cols}x{rows} grid "
     "({total} frames total, read left to right, top to bottom). {style}. "
@@ -345,15 +362,26 @@ async def sheet(
     é olhar os quadros — por isso eles são salvos, não só o GIF.
     """
     cols, rows = imaging.parse_grid(grid)
-    prompt = SHEET_TEMPLATE.format(
-        subject=subject,
-        style=style_text(style),
-        cols=cols,
-        rows=rows,
-        total=cols * rows,
-        action=action,
-    )
-    stem = safe_stem(kwargs.pop("name", None) or f"sheet-{slugify(subject)}")
+    reference = kwargs.pop("reference", None)
+    if reference is not None:
+        # Com referência o texto descreve o MOVIMENTO; quem define o personagem
+        # é a imagem anexada.
+        prompt = ANIMATE_TEMPLATE.format(
+            cols=cols, rows=rows, total=cols * rows, action=action
+        )
+        kwargs["files"] = [reference]
+        default_stem = f"anim-{slugify(subject)}"
+    else:
+        prompt = SHEET_TEMPLATE.format(
+            subject=subject,
+            style=style_text(style),
+            cols=cols,
+            rows=rows,
+            total=cols * rows,
+            action=action,
+        )
+        default_stem = f"sheet-{slugify(subject)}"
+    stem = safe_stem(kwargs.pop("name", None) or default_stem)
     transparent = kwargs.pop("transparent", True)
     tolerance = kwargs.get("tolerance", 24)
     generated = await _run(prompt, name=stem, transparent=False, trim=False, **kwargs)
@@ -578,3 +606,34 @@ async def cast(
 
     resolved = palettes.resolve(shared) if shared else []
     return CastResult(sprites=sprites, palette=resolved, atlas=packed, failed=failed)
+
+
+async def animate(
+    image: str | Path,
+    action: str = "a simple looping idle animation",
+    *,
+    grid: str = "4x1",
+    fps: int = 10,
+    frame_size: int | None = None,
+    gif: bool = True,
+    **kwargs,
+) -> Generated:
+    """Anima um sprite que já existe, mantendo o personagem.
+
+    É a diferença entre "faça uma animação de um cavaleiro" e "anime ESTE
+    cavaleiro". `sheet` faz o primeiro: gera um personagem novo a partir do
+    texto, e o resultado não é o sprite que você já tinha aprovado. Aqui a
+    imagem vai junto como referência e o texto só descreve o movimento.
+    """
+    source = existing_path(image)
+    return await sheet(
+        source.stem,
+        grid=grid,
+        action=action,
+        fps=fps,
+        frame_size=frame_size,
+        gif=gif,
+        reference=source,
+        name=kwargs.pop("name", None) or f"anim-{source.stem}",
+        **kwargs,
+    )

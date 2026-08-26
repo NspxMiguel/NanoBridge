@@ -3,7 +3,7 @@ import io
 import json
 
 import pytest
-from conftest import opaque_colours
+from conftest import opaque_colours, sheet_bytes
 from PIL import Image
 
 from nanobridge import core
@@ -498,3 +498,35 @@ def test_cast_passes_pixels_and_zoom_through(tmp_path):
     for generated in result.sprites:
         with Image.open(generated.paths[0]) as img:
             assert max(img.size) == 16 * 4
+
+
+def test_animate_sends_the_sprite_as_a_reference(tmp_path):
+    """Sem a referência o modelo desenha outro personagem 'inspirado' nele."""
+    src = tmp_path / "hero.png"
+    Image.open(io.BytesIO(png())).save(src)
+    backend = FakeBackend(images=[sheet_bytes(4, 1)])
+    result = asyncio.run(core.animate(src, "waves", backend=backend, out_dir=tmp_path, grid="4x1"))
+    call = backend.calls[0]
+    assert call["files"] == [src], "a imagem tinha que ir junto"
+    assert "attached image" in call["prompt"]
+    assert "KEEP THE SAME CHARACTER" in call["prompt"]
+    assert len(result.frames) == 4
+
+
+def test_animate_prompt_does_not_describe_the_character():
+    """O texto descreve o MOVIMENTO; quem define o personagem é a imagem."""
+    prompt = core.ANIMATE_TEMPLATE.format(cols=4, rows=1, total=4, action="waves")
+    assert "do not redesign" in prompt.lower()
+    assert "only the pose changes" in prompt.lower()
+
+
+def test_sheet_without_a_reference_still_uses_the_text_template(tmp_path):
+    backend = FakeBackend(images=[sheet_bytes(2, 1)])
+    asyncio.run(core.sheet("a slime", grid="2x1", backend=backend, out_dir=tmp_path))
+    assert backend.calls[0]["files"] is None
+    assert "A sprite sheet of a slime" in backend.calls[0]["prompt"]
+
+
+def test_animate_rejects_a_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(core.animate(tmp_path / "nope.png", "waves", backend=FakeBackend()))
