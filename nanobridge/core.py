@@ -747,3 +747,83 @@ async def texture(
         repaired=repaired,
         preview=tile_preview(path) if preview else None,
     )
+
+
+#: Ângulos diferentes para pedir a mesma coisa. Repetir o prompt idêntico dá
+#: variações tímidas — o modelo converge no mesmo desenho. Empurrar cada
+#: tentativa numa direção diferente é o que produz opções de verdade.
+VARIATION_ANGLES = (
+    "",
+    " Make this version noticeably different from an obvious first attempt: "
+    "different silhouette and proportions.",
+    " Make this version a different colour scheme and mood from the obvious one.",
+    " Make this version a bolder, more exaggerated, more stylised take.",
+    " Make this version simpler and cleaner, fewer details, stronger shapes.",
+    " Make this version a different pose and attitude.",
+)
+
+
+@dataclass
+class Variations:
+    """Várias opções do mesmo assunto, para escolher olhando."""
+
+    paths: list[Path] = field(default_factory=list)
+    contact_sheet: Path | None = None
+    failed: list[str] = field(default_factory=list)
+
+
+async def variations(
+    subject: str,
+    count: int = 4,
+    *,
+    style: str | None = None,
+    size: int | None = 160,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    contact_sheet: bool = True,
+    **kwargs,
+) -> Variations:
+    """Gera N opções do mesmo assunto de uma vez, e monta a folha de contato.
+
+    Pedir uma imagem e torcer é o fluxo caro: quando não presta, o pedido inteiro
+    é refeito. Aqui saem várias de uma vez, em paralelo, cada uma empurrada num
+    ângulo diferente — repetir o prompt idêntico dá variações tímidas, porque o
+    modelo converge no mesmo desenho.
+
+    A folha de contato existe porque quem escolhe é quem olha: um agente recebe
+    a folha inteira numa imagem e decide, em vez de pedir uma por uma.
+    """
+    if count < 1:
+        raise ValueError("count must be >= 1")
+
+    target = Path(out_dir or default_out_dir()).expanduser()
+    stem = safe_stem(name) if name else slugify(subject)
+
+    async def one(index: int) -> Generated:
+        angle = VARIATION_ANGLES[index % len(VARIATION_ANGLES)]
+        return await sprite(
+            subject + angle,
+            style=style,
+            size=size,
+            out_dir=target,
+            name=f"{stem}-v{index + 1}",
+            **kwargs,
+        )
+
+    results = await asyncio.gather(*(one(i) for i in range(count)), return_exceptions=True)
+    paths: list[Path] = []
+    failed: list[str] = []
+    for index, result in enumerate(results, start=1):
+        if isinstance(result, BaseException):
+            failed.append(f"v{index}: {result}")
+        else:
+            paths.append(result.paths[0])
+
+    sheet_path = None
+    if contact_sheet and paths:
+        loaded = [(p.stem, imaging.open_image(p)) for p in paths]
+        canvas, _ = imaging.pack_atlas(loaded, padding=8)
+        sheet_path = unique_path(target, f"{stem}-options", ".png")
+        canvas.save(sheet_path)
+
+    return Variations(paths=paths, contact_sheet=sheet_path, failed=failed)

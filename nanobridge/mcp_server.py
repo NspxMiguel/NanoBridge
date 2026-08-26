@@ -299,6 +299,53 @@ async def generate_sprite_sheet(
 
 @mcp.tool()
 @handled
+async def generate_variations(
+    subject: str,
+    count: int = 4,
+    style: str = "pixel",
+    size: int | None = 160,
+    palette: str | None = None,
+    out_dir: str | None = None,
+    name: str | None = None,
+    backend: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Generate several takes on the same subject and return them to compare.
+
+    Asking for one image and hoping is the expensive loop: when it is wrong, the
+    whole request is made again. This produces several at once, in parallel,
+    each pushed in a different direction — repeating an identical prompt gives
+    timid variations because the model converges on the same drawing.
+
+    The contact sheet comes back as one image so you can look at all the options
+    together and pick, instead of requesting them one at a time.
+    """
+    result = await core.variations(
+        subject,
+        count,
+        style=style,
+        size=size,
+        palette=palette,
+        **_kwargs(out_dir, name, backend, None),
+    )
+    summary = {
+        "paths": [str(p) for p in result.paths],
+        "contact_sheet": str(result.contact_sheet) if result.contact_sheet else None,
+        "failed": result.failed,
+    }
+    out: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(summary, ensure_ascii=False))
+    ]
+    # A folha inteira numa imagem: é assim que se compara.
+    if result.contact_sheet:
+        out.append(_preview(result.contact_sheet))
+    else:
+        for path in result.paths[:6]:
+            out.append(_preview(path))
+    return out
+
+
+@mcp.tool()
+@handled
 async def generate_texture(
     subject: str,
     style: str = "realistic",

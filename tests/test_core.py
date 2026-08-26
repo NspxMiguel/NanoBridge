@@ -593,3 +593,44 @@ def test_check_and_repair_work_on_any_file(tmp_path):
     before = core.check_tileable(src)["horizontal"]
     fixed = core.repair_tileable(src)
     assert core.check_tileable(fixed)["horizontal"] < before / 5
+
+
+def test_variations_pushes_each_attempt_in_a_different_direction(tmp_path):
+    """Repetir o prompt idêntico dá variações tímidas: o modelo converge."""
+    backend = FakeBackend()
+    result = asyncio.run(
+        core.variations("a slime", 4, backend=backend, out_dir=tmp_path, contact_sheet=False)
+    )
+    assert len(result.paths) == 4
+    prompts = [c["prompt"] for c in backend.calls]
+    assert len(set(prompts)) == 4, "quatro prompts iguais não dão quatro opções"
+
+
+def test_variations_builds_a_contact_sheet(tmp_path):
+    result = asyncio.run(core.variations("a slime", 3, backend=FakeBackend(), out_dir=tmp_path))
+    assert result.contact_sheet is not None and result.contact_sheet.exists()
+
+
+def test_variations_names_files_predictably(tmp_path):
+    result = asyncio.run(
+        core.variations("a slime", 2, backend=FakeBackend(), out_dir=tmp_path,
+                        name="opt", contact_sheet=False)
+    )
+    assert sorted(p.stem for p in result.paths) == ["opt-v1", "opt-v2"]
+
+
+def test_one_failed_variation_does_not_lose_the_others(tmp_path):
+    class Picky(FakeBackend):
+        async def generate(self, prompt, files=None, model=None, conversation=None):
+            if "exaggerated" in prompt:
+                return Result(images=[], text="I can't create that.", backend=self.name)
+            return await super().generate(prompt, files=files, model=model, conversation=conversation)
+
+    result = asyncio.run(core.variations("a slime", 4, backend=Picky(), out_dir=tmp_path))
+    assert len(result.paths) == 3
+    assert len(result.failed) == 1
+
+
+def test_variations_rejects_a_bad_count(tmp_path):
+    with pytest.raises(ValueError):
+        asyncio.run(core.variations("x", 0, backend=FakeBackend(), out_dir=tmp_path))

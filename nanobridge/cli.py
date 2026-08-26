@@ -186,6 +186,40 @@ def _seam_line(seam: dict) -> str:
     )
 
 
+async def _cmd_variations(args: argparse.Namespace) -> int:
+    """Várias opções do mesmo assunto, para escolher olhando."""
+    result = await core.variations(
+        args.subject,
+        args.count,
+        style=args.style,
+        size=args.size,
+        out_dir=args.out,
+        name=args.name,
+        contact_sheet=not args.no_sheet,
+        backend_name=args.backend,
+        palette=args.palette,
+        pixels=args.pixels,
+        zoom=args.zoom,
+        retries=args.retries,
+    )
+    if args.json:
+        print(json.dumps({
+            "paths": [str(p) for p in result.paths],
+            "contact_sheet": str(result.contact_sheet) if result.contact_sheet else None,
+            "failed": result.failed,
+        }, ensure_ascii=False, indent=2))
+    else:
+        for path in result.paths:
+            print(t("gen.saved", path=path))
+        if result.contact_sheet:
+            print(t("gen.saved", path=result.contact_sheet))
+        for why in result.failed:
+            print(why, file=sys.stderr)
+    if args.open and result.contact_sheet:
+        _open_files([result.contact_sheet])
+    return 1 if not result.paths else 0
+
+
 async def _cmd_texture(args: argparse.Namespace) -> int:
     """Textura que repete, com a emenda medida — não só prometida."""
     result = await core.texture(
@@ -484,6 +518,25 @@ def build_parser() -> argparse.ArgumentParser:
     sheet.add_argument("--no-gif", action="store_true")
     _common(sheet)
     sheet.set_defaults(func=_cmd_sheet, is_async=True)
+
+    variations = sub.add_parser(
+        "variations", help="N opções do mesmo assunto / N options of the same subject"
+    )
+    variations.add_argument("subject")
+    variations.add_argument("-c", "--count", type=int, default=4)
+    variations.add_argument("-s", "--style", default="pixel")
+    variations.add_argument("--size", type=int, default=160)
+    variations.add_argument("--palette")
+    variations.add_argument("--pixels", type=int)
+    variations.add_argument("--zoom", type=int, default=1)
+    variations.add_argument("--no-sheet", action="store_true")
+    variations.add_argument("-o", "--out", type=Path)
+    variations.add_argument("-n", "--name")
+    variations.add_argument("-b", "--backend", choices=("web", "api"))
+    variations.add_argument("--retries", type=int, default=2)
+    variations.add_argument("--open", action="store_true")
+    variations.add_argument("--json", action="store_true")
+    variations.set_defaults(func=_cmd_variations, is_async=True)
 
     texture = sub.add_parser(
         "texture", help="textura que repete, emenda medida / verified tileable texture"
