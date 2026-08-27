@@ -90,6 +90,58 @@ For pixel art, prefer `--pixels N` over `--size N`: `--size` scales the image,
 `--pixels` rebuilds it at exactly N art pixels so the grid actually closes.
 `--zoom` scales it back up by a whole number without breaking that.
 
+## Writing the prompt
+
+**Name what you do not want.** The model adds a drop shadow, a patch of ground,
+a border, a caption, a mockup frame — each of which ruins a sprite, and none of
+which go away by asking for something "clean". The built-in templates already
+carry that list; when you write a free-form `generate_image` prompt, carry it
+yourself: *no shadow, no floor, no border, no frame, no text, no watermark, no
+mockup, no extra objects.*
+
+**Be concrete about the silhouette, vague about everything else.** A sprite is
+read at 32 pixels and what survives is the outline. `a stocky warrior with a
+round shield and a short axe` draws; `a warrior weathered by years of war` does
+not.
+
+**One subject per image.** "a knight and his horse" gives a scene that cannot be
+cut into two sprites. Generate separately, then `pack_atlas`.
+
+**Say the pose** when several sprites must match: `facing the camera`, `side
+view, facing right`.
+
+**Style is a whole sentence under the hood.** Passing free text to `style`
+replaces that sentence, so include what you still want — outline weight,
+palette, shading.
+
+**Pixel art needs `pixels`.** The style alone gives pixel-art-*looking* art at
+1024px: smooth curves pretending to be pixels. `pixels=32` resamples to a real
+grid.
+
+**Animation actions are loops.** `a walk cycle: left leg forward, passing pose,
+right leg forward, passing pose` beats `walking`. Add *returning to the start*
+when it should loop, or the GIF jumps. Fewer frames hold together far better —
+`4x1` is reliable where `6x2` drifts, and by frame ten the character has quietly
+changed.
+
+**Reference beats description.** Once a sprite exists, never describe it again —
+hand the file over (`animate_sprite`, `edit_image`) and add *keep everything
+else identical*, or "add a cape" becomes "a different character, with a cape".
+
+## When the output is wrong
+
+- **Wrong drawing** → change the prompt. Regenerating an unchanged prompt mostly
+  repeats it.
+- **Right drawing, wrong crop or background** → fix it locally. `cut_image`,
+  `slice_sheet`, `pack_atlas`, `build_normal_map` and `repair_tileable` cost no
+  quota. Never spend a generation on what Pillow can do.
+- **The model answers in words instead of drawing** → it read the prompt as a
+  question. Rephrase as a description of an object. Retries already handle this.
+- **Everything looks the same across attempts** → the model converges; that is
+  what `generate_variations` is for.
+
+Full guide with the reasoning: `PROMPTING.md` in the repository.
+
 ## What makes the output usable
 
 - **Say what you do NOT want.** The prompt templates already forbid shadows,

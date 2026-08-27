@@ -37,6 +37,25 @@ Nothing to paste, nothing to buy.
 
 `nanobridge doctor` reports which one is live and how much quota is left.
 
+## There is no login, and no key
+
+The question everyone asks first has an answer nobody guesses: you don't sign in
+to anything. NanoBridge reads the Gemini session cookie already sitting in your
+browser. If you can open <https://gemini.google.com> and chat, it can generate
+images — it is literally the same session.
+
+```bash
+nanobridge setup
+```
+
+walks it: says that outright, finds the session, opens Gemini if there isn't
+one, and proves the whole path by generating a real image rather than claiming
+it should work.
+
+There is no GUI, on purpose — there is nothing for one to do. The `api` backend
+takes a `GEMINI_API_KEY` and exists only as a fallback for accounts with billing
+enabled; on a free tier every image model answers 429.
+
 ## Install
 
 ```bash
@@ -228,6 +247,14 @@ for one run.
 - It talks to an interface Google does not document, so a change on their side can
   break it. The `api` backend is the fallback that stays put.
 - Generated images carry Google's SynthID watermark.
+
+## Getting good output
+
+[`PROMPTING.md`](PROMPTING.md) is the guide: which tool fits which ask, why
+naming what you *don't* want matters more than describing what you do, how to
+write an animation action that actually loops, and what to do when the output is
+wrong. The agent skill carries a condensed version, so an agent using the MCP
+server already knows it.
 
 ## Credit
 

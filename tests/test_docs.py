@@ -56,3 +56,25 @@ def test_the_page_and_the_package_agree_on_the_version():
 
     page = (ROOT / "docs/index.html").read_text()
     assert f"NanoBridge {__version__}" in page, "a página ficou numa versão antiga"
+
+
+def test_the_prompting_guide_exists_and_covers_the_traps():
+    """O guia é a resposta a 'como eu escrevo o prompt' — se ele encolher e
+    perder as armadilhas, ele deixa de servir."""
+    guide = (ROOT / "PROMPTING.md").read_text().lower()
+    for trap in ("no shadow", "keep everything else identical", "converges", "loop"):
+        assert trap in guide, f"o guia perdeu: {trap}"
+
+
+def test_the_skill_teaches_prompting_not_just_the_command_list():
+    skill = (ROOT / "skill/SKILL.md").read_text().lower()
+    assert "name what you do not want" in skill
+    assert "reference beats description" in skill
+    assert "when the output is wrong" in skill
+
+
+def test_the_readme_answers_the_login_question():
+    """'Como eu faço login?' é a primeira pergunta de todo mundo."""
+    readme = (ROOT / "README.md").read_text().lower()
+    assert "there is no login" in readme
+    assert "nanobridge setup" in readme
