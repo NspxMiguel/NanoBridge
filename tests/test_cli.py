@@ -263,3 +263,48 @@ def test_cast_no_trim_keeps_sprites_the_same_size(fake, tmp_path, capsys):
         with Image.open(path) as img:
             sizes.add(img.size)
     assert len(sizes) == 1, f"tamanhos diferentes: {sizes}"
+
+
+def test_setup_explains_there_is_no_login(monkeypatch, capsys):
+    """A pergunta óbvia é 'como faço login?' e a resposta é 'você não faz'."""
+    monkeypatch.setattr("nanobridge.cli.web_find_cookies", lambda: None)
+    assert cli.main(["--lang", "en", "setup", "--no-open"]) == 1
+    out = capsys.readouterr().out
+    assert "no login here" in out
+    assert "no key to paste" in out
+    assert "gemini.google.com" in out
+
+
+def test_setup_stops_at_the_first_missing_step(monkeypatch, capsys):
+    monkeypatch.setattr("nanobridge.cli.web_find_cookies", lambda: None)
+    assert cli.main(["--lang", "en", "setup", "--no-open"]) == 1
+    out = capsys.readouterr().out
+    assert "no session found" in out
+    assert "All set" not in out
+
+
+def test_setup_walks_every_step_when_the_session_works(monkeypatch, capsys, fake):
+    monkeypatch.setattr("nanobridge.cli.web_find_cookies", lambda: {"_source": "chrome"})
+
+    async def quota(self):
+        return {"tier": "TEST"}
+
+    monkeypatch.setattr("nanobridge.backends.web.WebBackend.quota", quota)
+    monkeypatch.setattr("nanobridge.cli._mcp_is_registered", lambda: True)
+    assert cli.main(["--lang", "en", "setup", "--no-test", "--no-open"]) == 0
+    out = capsys.readouterr().out
+    assert "found in chrome" in out
+    assert "TEST plan" in out
+    assert "All set" in out
+
+
+def test_setup_offers_the_exact_command_when_mcp_is_missing(monkeypatch, capsys):
+    monkeypatch.setattr("nanobridge.cli.web_find_cookies", lambda: {"_source": "chrome"})
+
+    async def quota(self):
+        return {"tier": "TEST"}
+
+    monkeypatch.setattr("nanobridge.backends.web.WebBackend.quota", quota)
+    monkeypatch.setattr("nanobridge.cli._mcp_is_registered", lambda: False)
+    cli.main(["--lang", "en", "setup", "--no-test", "--no-open"])
+    assert "claude mcp add nanobridge" in capsys.readouterr().out

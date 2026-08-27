@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from . import __version__, atlas_formats, config, core, imaging, palettes
 from .backends import all_backends, pick
+from .backends.web import find_cookies as web_find_cookies
 from .errors import NanoBridgeError
 from .i18n import SUPPORTED, t
 
@@ -125,6 +127,105 @@ def _report(result: core.Generated, args: argparse.Namespace) -> None:
     if getattr(args, "open", False):
         targets = [result.gif] if result.gif else result.paths
         _open_files(targets)
+
+
+async def _cmd_setup(args: argparse.Namespace) -> int:
+    """Primeiro uso guiado. Existe porque a pergunta óbvia — 'como eu faço
+    login?' — tem uma resposta que ninguém adivinha: você não faz.
+
+    O `doctor` diz o estado para quem já sabe o que procurar. Isto conduz quem
+    está chegando: explica que não há login, encontra a sessão, abre o Gemini
+    quando falta, e prova o caminho inteiro gerando uma imagem de verdade em vez
+    de dizer "deve funcionar".
+    """
+    from .backends.web import WebBackend
+
+    print(t("setup.title"))
+    print()
+    print("  " + t("setup.no_login"))
+    print()
+
+    step = 1
+
+    def say(state: str, text: str) -> None:
+        print(f"  {state} {t('setup.step', n=step, what=text)}")
+
+    # 1 — a sessão existe no navegador?
+    cookies = web_find_cookies()
+    if not cookies:
+        say("--", t("setup.checking_cookies") + ": " + t("setup.not_found"))
+        if not args.no_open:
+            print("     " + t("setup.opening"))
+            _open_urls(["https://gemini.google.com"])
+        print()
+        print("  " + t("setup.not_ready"))
+        return 1
+    say("OK", t("setup.checking_cookies") + ": " + t("setup.found", browser=cookies.get("_source", "?")))
+    step += 1
+
+    # 2 — a sessão está viva? (o cookie pode existir e estar morto)
+    backend = WebBackend()
+    try:
+        quota = await backend.quota()
+    except NanoBridgeError as exc:
+        say("--", t("setup.checking_session") + f": {exc}")
+        print()
+        print("  " + t("setup.not_ready"))
+        return 1
+    say("OK", t("setup.checking_session") + ": " + t("setup.session_ok", tier=quota.get("tier", "?")))
+    step += 1
+
+    # 3 — o caminho inteiro funciona? Só uma geração real prova.
+    if not args.no_test:
+        say("..", t("setup.generating"))
+        try:
+            result = await core.sprite(
+                "a small green slime, friendly face",
+                size=96,
+                out_dir=args.out or config.default_out_dir(),
+                name="nanobridge-setup-test",
+                backend=backend,
+            )
+        except NanoBridgeError as exc:
+            say("--", f"{exc}")
+            print()
+            print("  " + t("setup.not_ready"))
+            return 1
+        say("OK", t("setup.generated", path=result.paths[0]))
+        step += 1
+
+    # 4 — o Claude Code enxerga o servidor?
+    binary = shutil.which("nanobridge") or sys.argv[0]
+    registered = _mcp_is_registered()
+    if registered:
+        say("OK", t("setup.mcp_ok"))
+    else:
+        say("--", t("setup.mcp_missing", bin=binary))
+
+    print()
+    print("  " + t("setup.ready"))
+    return 0
+
+
+def _mcp_is_registered() -> bool:
+    """O Claude Code conhece o servidor? Ausência de `claude` não é falha."""
+    claude = shutil.which("claude")
+    if not claude:
+        return False
+    try:
+        out = subprocess.run([claude, "mcp", "list"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "nanobridge" in out.stdout
+
+
+def _open_urls(urls: list[str]) -> None:
+    opener = {"darwin": ["open"], "win32": ["cmd", "/c", "start", ""]}.get(sys.platform, ["xdg-open"])
+    for url in urls:
+        try:
+            subprocess.run([*opener, url], check=False)
+        except OSError:
+            print(f"     {url}", file=sys.stderr)
 
 
 async def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -484,6 +585,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--version", action="version", version=f"nanobridge {__version__}")
     parser.add_argument("--lang", choices=SUPPORTED, help="idioma desta execução / language for this run")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    setup = sub.add_parser("setup", help="primeiro uso guiado / guided first run")
+    setup.add_argument("--no-test", action="store_true", help="não gerar a imagem de prova")
+    setup.add_argument("--no-open", action="store_true", help="não abrir o navegador")
+    setup.add_argument("-o", "--out", type=Path)
+    setup.set_defaults(func=_cmd_setup, is_async=True)
 
     doctor = sub.add_parser("doctor", help="o que está pronto / what is ready")
     doctor.add_argument("-b", "--backend", choices=("web", "api"))

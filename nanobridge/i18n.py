@@ -24,6 +24,66 @@ STRINGS: dict[str, dict[str, str]] = {
         "pt": "cookies do Gemini encontrados no {browser}",
         "en": "Gemini cookies found in {browser}",
     },
+    "setup.title": {"pt": "NanoBridge — primeiro uso", "en": "NanoBridge — first run"},
+    "setup.no_login": {
+        "pt": (
+            "Não existe login aqui, e não existe chave para colar.\n"
+            "  O NanoBridge lê o cookie de sessão do Gemini que já está no seu\n"
+            "  navegador. Se você consegue abrir gemini.google.com e conversar,\n"
+            "  ele consegue gerar imagem — é literalmente a mesma sessão."
+        ),
+        "en": (
+            "There is no login here, and no key to paste.\n"
+            "  NanoBridge reads the Gemini session cookie already in your\n"
+            "  browser. If you can open gemini.google.com and chat, it can\n"
+            "  generate images — it is literally the same session."
+        ),
+    },
+    "setup.step": {"pt": "{n}. {what}", "en": "{n}. {what}"},
+    "setup.checking_cookies": {
+        "pt": "procurando a sessão no navegador",
+        "en": "looking for the browser session",
+    },
+    "setup.found": {"pt": "achei no {browser}", "en": "found in {browser}"},
+    "setup.not_found": {
+        "pt": (
+            "não achei sessão nenhuma.\n"
+            "     Abra https://gemini.google.com no Chrome, entre na sua conta\n"
+            "     Google, mande uma mensagem qualquer, e rode isto de novo."
+        ),
+        "en": (
+            "no session found.\n"
+            "     Open https://gemini.google.com in Chrome, sign in to your\n"
+            "     Google account, send any message, then run this again."
+        ),
+    },
+    "setup.opening": {
+        "pt": "abrindo o Gemini no navegador para você entrar…",
+        "en": "opening Gemini in your browser so you can sign in…",
+    },
+    "setup.checking_session": {"pt": "conferindo se a sessão vale", "en": "checking the session is live"},
+    "setup.session_ok": {"pt": "sessão boa, plano {tier}", "en": "session live, {tier} plan"},
+    "setup.generating": {
+        "pt": "gerando uma imagem de teste (leva uns 30s)",
+        "en": "generating one test image (about 30s)",
+    },
+    "setup.generated": {"pt": "saiu: {path}", "en": "came out: {path}"},
+    "setup.mcp_ok": {
+        "pt": "servidor MCP registrado no Claude Code",
+        "en": "MCP server registered with Claude Code",
+    },
+    "setup.mcp_missing": {
+        "pt": "MCP não registrado. Rode: claude mcp add nanobridge --scope user -- {bin} mcp",
+        "en": "MCP not registered. Run: claude mcp add nanobridge --scope user -- {bin} mcp",
+    },
+    "setup.ready": {
+        "pt": "Tudo pronto. Experimente: nanobridge sprite \"um slime verde\"",
+        "en": "All set. Try: nanobridge sprite \"a green slime\"",
+    },
+    "setup.not_ready": {
+        "pt": "Faltou o passo acima. Resolva e rode 'nanobridge setup' de novo.",
+        "en": "The step above is missing. Fix it and run 'nanobridge setup' again.",
+    },
     "doctor.cookies_missing": {
         "pt": (
             "nenhum cookie do Gemini no navegador — "
