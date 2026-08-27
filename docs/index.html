@@ -79,7 +79,7 @@
 <div class="wrap">
 
 <header>
-  <span class="badge">🍌 NanoBridge 0.4.0</span>
+  <span class="badge">🍌 NanoBridge 0.5.0</span>
   <h1><span lang="en">Nano Banana, wired into your agent.</span><span lang="pt">Nano Banana, ligado no seu agente.</span></h1>
   <p class="lede">
     <span lang="en">Gemini's image models as an <strong>MCP server</strong> and a <strong>CLI</strong> — spending the Gemini plan you already pay for, instead of billing per image.</span>
@@ -192,6 +192,23 @@
   <p>
     <span lang="en"><code>nanobridge doctor</code> says which one is live and how much quota is left. Nothing to paste, nothing to buy.</span>
     <span lang="pt"><code>nanobridge doctor</code> diz qual está de pé e quanta cota sobrou. Nada para colar, nada para comprar.</span>
+  </p>
+</section>
+
+<section id="login">
+  <h2><span lang="en">There is no login, and no key</span><span lang="pt">Não existe login, nem chave</span></h2>
+  <p class="sub">
+    <span lang="en">The question everyone asks first has an answer nobody guesses.</span>
+    <span lang="pt">A pergunta que todo mundo faz primeiro tem uma resposta que ninguém adivinha.</span>
+  </p>
+  <p>
+    <span lang="en">You don't sign in to anything. NanoBridge reads the Gemini session cookie already sitting in your browser — if you can open <a href="https://gemini.google.com">gemini.google.com</a> and chat, it can generate images. It is literally the same session. There is no GUI on purpose: there is nothing for one to do.</span>
+    <span lang="pt">Você não entra em nada. O NanoBridge lê o cookie de sessão do Gemini que já está no seu navegador — se você consegue abrir o <a href="https://gemini.google.com">gemini.google.com</a> e conversar, ele consegue gerar imagem. É literalmente a mesma sessão. Não existe GUI de propósito: não haveria o que ela fizesse.</span>
+  </p>
+<pre><code>nanobridge setup</code></pre>
+  <p>
+    <span lang="en">walks it: says that outright, finds the session, opens Gemini if there isn't one, and proves the whole path by generating a real image instead of claiming it should work.</span>
+    <span lang="pt">conduz: diz isso com todas as letras, acha a sessão, abre o Gemini se não houver, e prova o caminho inteiro gerando uma imagem de verdade em vez de dizer que deve funcionar.</span>
   </p>
 </section>
 
