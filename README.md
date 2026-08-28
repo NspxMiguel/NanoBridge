@@ -1,10 +1,19 @@
+<div align="center">
+
 # NanoBridge
 
-[![tests](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml/badge.svg)](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml)
+**Gemini's Nano Banana image generation, wired into agents as an MCP server and a CLI**
+— using the Gemini plan the account already has, not a per-image bill.
 
-Gemini's **Nano Banana** image generation, wired into agents as an **MCP server**
-and a **CLI** — using the Gemini plan the account already has, not a per-image
-bill.
+[![tests](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml/badge.svg)](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml)
+[![MCP](https://img.shields.io/badge/MCP-server_included-8a63d2)](#use-it-from-an-agent)
+[![Cost](https://img.shields.io/badge/cost-your_existing_Gemini_plan-3fb950)](#why-not-just-call-the-api)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](#install)
+[![License](https://img.shields.io/github/license/NspxMiguel/NanoBridge?color=lightgrey)](LICENSE)
+
+</div>
+
+---
 
 ```bash
 nanobridge sprite "a small knight with a blue shield and a silver sword" --size 160
@@ -255,6 +264,12 @@ naming what you *don't* want matters more than describing what you do, how to
 write an animation action that actually loops, and what to do when the output is
 wrong. The agent skill carries a condensed version, so an agent using the MCP
 server already knows it.
+
+## Links
+
+- Project page: <https://www.nspx.dev/NanoBridge/>
+- Why it bridges the browser session instead of the image API:
+  <https://www.nspx.dev/artigos/nanobridge.html>
 
 ## Credit
 
