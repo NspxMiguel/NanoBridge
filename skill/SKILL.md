@@ -114,6 +114,12 @@ view, facing right`.
 replaces that sentence, so include what you still want — outline weight,
 palette, shading.
 
+**Textures need a `size`.** Without it a texture is ~2048px square — a nice
+picture and a useless tile. Pass 256 or 128. The resize happens before the seam
+is measured, so the number describes the tile that actually ships. And say the
+contrast you want: "dark dungeon floor" plus a 16-colour palette collapses into
+near-black mush.
+
 **Pixel art needs `pixels`.** The style alone gives pixel-art-*looking* art at
 1024px: smooth curves pretending to be pixels. `pixels=32` resamples to a real
 grid.
