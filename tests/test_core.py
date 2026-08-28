@@ -634,3 +634,40 @@ def test_one_failed_variation_does_not_lose_the_others(tmp_path):
 def test_variations_rejects_a_bad_count(tmp_path):
     with pytest.raises(ValueError):
         asyncio.run(core.variations("x", 0, backend=FakeBackend(), out_dir=tmp_path))
+
+
+def test_pixels_on_a_sheet_applies_per_frame_not_to_the_whole_sheet(tmp_path):
+    """Bug real: `pixels=32` numa grade 4x1 crushava a FOLHA para 32px de
+    largura, deixando cada quadro com 8px. A folha saía 32x8 e o personagem
+    virava sujeira."""
+    backend = FakeBackend(images=[sheet_bytes(4, 1)])
+    result = asyncio.run(
+        core.sheet("x", grid="4x1", backend=backend, out_dir=tmp_path,
+                   name="s", pixels=32, frame_size=None)
+    )
+    assert len(result.frames) == 4
+    for frame in result.frames:
+        with Image.open(frame) as img:
+            assert max(img.size) == 32, f"quadro saiu {img.size}, devia ter 32px de lado maior"
+
+
+def test_zoom_on_a_sheet_also_applies_per_frame(tmp_path):
+    backend = FakeBackend(images=[sheet_bytes(2, 1)])
+    result = asyncio.run(
+        core.sheet("x", grid="2x1", backend=backend, out_dir=tmp_path,
+                   name="z", pixels=16, zoom=4)
+    )
+    for frame in result.frames:
+        with Image.open(frame) as img:
+            assert max(img.size) == 64, f"zoom nao foi aplicado: {img.size}"
+
+
+def test_the_sheet_itself_is_not_crushed_by_pixels(tmp_path):
+    """A folha salva tem que continuar legível — ela é o que se olha para saber
+    se o modelo obedeceu a grade."""
+    backend = FakeBackend(images=[sheet_bytes(4, 1)])
+    result = asyncio.run(
+        core.sheet("x", grid="4x1", backend=backend, out_dir=tmp_path, name="s", pixels=32)
+    )
+    with Image.open(result.paths[0]) as sheet_img:
+        assert sheet_img.width >= 100, f"a folha foi esmagada para {sheet_img.size}"

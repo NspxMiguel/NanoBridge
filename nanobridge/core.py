@@ -396,6 +396,14 @@ async def sheet(
     stem = safe_stem(kwargs.pop("name", None) or default_stem)
     transparent = kwargs.pop("transparent", True)
     tolerance = kwargs.get("tolerance", 24)
+    # Pixelar e reduzir cor pertencem ao QUADRO, não à folha. Aplicados na folha
+    # inteira, `pixels=32` numa grade 4x1 deixa cada quadro com 8px de largura e
+    # o personagem vira sujeira — medido: a folha saía 32x8. Aqui eles são
+    # retirados e reaplicados depois do corte.
+    # `palette` fica: quantizar cor na folha inteira é até melhor, porque força
+    # os quadros a compartilharem exatamente as mesmas cores.
+    per_frame_pixels = kwargs.pop("pixels", None)
+    per_frame_zoom = kwargs.pop("zoom", 1)
     generated = await _run(prompt, name=stem, transparent=False, trim=False, **kwargs)
 
     source = generated.paths[0]
@@ -423,6 +431,12 @@ async def sheet(
     for index, frame in enumerate(frames, start=1):
         if frame_size:
             frame = imaging.fit(frame, frame_size)
+        if per_frame_pixels:
+            frame = imaging.pixelate(frame, per_frame_pixels, zoom=per_frame_zoom)
+        elif per_frame_zoom > 1:
+            frame = frame.resize(
+                (frame.width * per_frame_zoom, frame.height * per_frame_zoom), imaging.Image.NEAREST
+            )
         path = frames_dir / f"{source.stem}-{index:02d}.png"
         frame.save(path)
         frame_paths.append(path)
