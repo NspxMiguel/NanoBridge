@@ -259,7 +259,12 @@ def pack_atlas(
     canvas = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
     by_name = dict(images)
     for entry in placements:
-        canvas.paste(by_name[entry.name], (entry.x, entry.y), by_name[entry.name])
+        # Sem máscara de propósito. Passar a própria imagem como máscara
+        # multiplica o alfa por ele mesmo, e a borda anti-aliased do sprite sai
+        # do atlas mais transparente do que entrou — medido: 35 pixels de 2112
+        # perdiam alfa (215 -> 181, 174 -> 119). As regiões não se sobrepõem, e
+        # o destino é transparente, então copiar RGBA direto é o correto.
+        canvas.paste(by_name[entry.name], (entry.x, entry.y))
 
     # O manifesto sai na ordem em que o pedido chegou, não na ordem de
     # empacotamento — quem lê o JSON não deveria ter que saber o algoritmo.

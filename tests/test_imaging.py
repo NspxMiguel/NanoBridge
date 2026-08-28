@@ -364,3 +364,37 @@ def test_normal_map_preserves_alpha():
 def test_normal_map_rejects_a_bad_strength():
     with pytest.raises(ValueError):
         imaging.normal_map(Image.new("RGBA", (8, 8)), strength=0)
+
+
+def test_pack_atlas_does_not_eat_semi_transparent_edges():
+    """Bug real: passar a imagem como própria máscara no paste multiplica o alfa
+    por ele mesmo, e a borda anti-aliased sai do atlas mais transparente do que
+    entrou. Medido no caso real: 35 pixels de 2112, alfa 215 -> 181."""
+    sprite = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    # uma faixa de meio-tom, que é onde o alfa duplicado aparece
+    for x in range(16):
+        for y in range(16):
+            sprite.putpixel((x, y), (200, 60, 60, 128))
+
+    canvas, entries = imaging.pack_atlas([("s", sprite)], padding=0)
+    e = entries[0]
+    recorte = canvas.crop((e.x, e.y, e.x + e.w, e.y + e.h))
+    assert recorte.getpixel((8, 8))[3] == 128, (
+        f"o alfa saiu {recorte.getpixel((8, 8))[3]}, devia continuar 128"
+    )
+
+
+def test_pack_atlas_is_pixel_exact_for_every_sprite():
+    """O manifesto só vale se a região contiver exatamente o sprite."""
+    sprites = []
+    for i, size in enumerate([(20, 30), (14, 22), (28, 18)]):
+        img = Image.new("RGBA", size, (0, 0, 0, 0))
+        ImageDraw.Draw(img).ellipse((1, 1, size[0] - 2, size[1] - 2), fill=(40 + i * 60, 120, 200, 160))
+        sprites.append((f"s{i}", img))
+
+    canvas, entries = imaging.pack_atlas(sprites, padding=2)
+    by_name = dict(sprites)
+    for e in entries:
+        recorte = canvas.crop((e.x, e.y, e.x + e.w, e.y + e.h))
+        assert recorte.tobytes() == by_name[e.name].tobytes(), \
+            f"{e.name}: a região do atlas não é o sprite"
