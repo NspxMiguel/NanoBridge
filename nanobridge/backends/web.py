@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..conversation import decode as decode_conversation
 from ..conversation import encode as encode_conversation
-from ..errors import NoCookiesError, SessionExpiredError
+from ..errors import NoCookiesError, SessionExpiredError, WebQuotaError
 from ..i18n import t
 from .base import Backend, Result
 
@@ -81,6 +81,22 @@ _SIGNED_OUT = (
     "faca login",
     "entre na sua conta",
 )
+
+
+# Cota estourada tambem chega em prosa, e a frase do modelo nao fala de cota:
+# ela diz que "nao pode criar mais" hoje. Quem sabe que e cota e o cliente, que
+# ja tem o numero — entao a deteccao olha o numero, nao o texto.
+def _quota_exhausted(client) -> bool:
+    raw = getattr(client, "quotas", None) or {}
+    for value in raw.values():
+        if isinstance(value, dict) and value.get("remaining") == 0:
+            return True
+    usage = raw.get("usage_info") or {}
+    for window in ("current_5h", "weekly"):
+        block = usage.get(window)
+        if isinstance(block, dict) and block.get("remaining_credits") == 0:
+            return True
+    return False
 
 
 def _sounds_signed_out(text: str) -> bool:
@@ -204,6 +220,11 @@ class WebBackend(Backend):
         # modelo responde "you might be signed out" em texto, sem imagem. Sem
         # este teste o usuário levava "o modelo não devolveu imagem nenhuma",
         # que esconde a única coisa acionável — entrar de novo no Gemini.
+        # Cota antes de sessao: as duas devolvem prosa sem imagem, mas a cota tem
+        # um numero que prova, e a mensagem certa e "espere" e nao "entre de novo".
+        if not output.images and _quota_exhausted(client):
+            raise WebQuotaError()
+
         if not output.images and _sounds_signed_out(output.text or ""):
             # Largar o cliente é o que permite consertar sem reiniciar: o
             # servidor MCP vive por dias, e depois que a pessoa entra de novo no

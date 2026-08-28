@@ -41,3 +41,11 @@ class BackendError(NanoBridgeError):
 
     def __init__(self, backend: str, detail: str) -> None:
         super().__init__(t("err.backend", backend=backend, detail=detail))
+
+
+class WebQuotaError(NanoBridgeError):
+    """A cota do plano acabou — some sozinha com o tempo, e o usuário precisa
+    saber que é isso e não um defeito."""
+
+    def __init__(self) -> None:
+        super().__init__(t("err.quota_web"))

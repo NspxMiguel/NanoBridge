@@ -193,3 +193,59 @@ def test_debug_timing_never_touches_stdout(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "test stage" in captured.err
+
+
+@pytest.mark.parametrize(
+    "quotas,esperado",
+    [
+        ({"None-11": {"remaining": 0, "total": 1200}}, True),
+        ({"None-11": {"remaining": 850, "total": 1200}}, False),
+        ({"usage_info": {"current_5h": {"remaining_credits": 0}}}, True),
+        ({"usage_info": {"weekly": {"remaining_credits": 0}}}, True),
+        ({"usage_info": {"current_5h": {"remaining_credits": 400}}}, False),
+        ({}, False),
+        ({"extra": {"default": {"is_blocked": False}}}, False),
+    ],
+)
+def test_quota_exhaustion_is_read_from_the_number(quotas, esperado):
+    """O modelo responde em prosa e nao fala de cota — quem sabe e o cliente,
+    que ja tem o numero."""
+
+    class FakeClient:
+        pass
+
+    c = FakeClient()
+    c.quotas = quotas
+    assert web._quota_exhausted(c) is esperado
+
+
+@pytest.mark.asyncio
+async def test_exhausted_quota_says_wait_not_sign_in_again():
+    """Bug real: cota estourada saia como 'o modelo nao devolveu imagem', com o
+    ERROR de cota so no log. A mensagem certa e que ela volta sozinha."""
+    from nanobridge.errors import WebQuotaError
+
+    class DeadOutput:
+        images: list = []
+        text = "I can't create more images for you today."
+
+    class FakeChat:
+        metadata = ["c_1"]
+
+        async def send_message(self, *a, **k):
+            return DeadOutput()
+
+    class FakeClient:
+        quotas = {"None-11": {"remaining": 0, "total": 1200}}
+
+        def start_chat(self, **kw):
+            return FakeChat()
+
+        async def close(self):
+            return None
+
+    web.WebBackend._client = FakeClient()
+    with pytest.raises(WebQuotaError) as err:
+        await web.WebBackend().generate("x")
+    assert "doctor" in str(err.value)
+    web.WebBackend._client = None

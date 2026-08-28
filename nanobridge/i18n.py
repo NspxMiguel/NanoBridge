@@ -142,6 +142,16 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "the Gemini session expired. Open https://gemini.google.com in Chrome to refresh it.",
     },
     "err.file_missing": {"pt": "arquivo não encontrado: {path}", "en": "file not found: {path}"},
+    "err.quota_web": {
+        "pt": (
+            "a cota do seu plano Gemini acabou nesta janela. "
+            "Ela volta sozinha — 'nanobridge doctor' mostra quanto falta e quando reseta."
+        ),
+        "en": (
+            "your Gemini plan's quota ran out for this window. "
+            "It comes back on its own — 'nanobridge doctor' shows how much is left and when it resets."
+        ),
+    },
     "err.quota": {
         "pt": (
             "a API do Gemini recusou por cota: no plano gratuito os modelos de imagem têm cota "
