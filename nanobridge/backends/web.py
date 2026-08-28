@@ -83,9 +83,29 @@ _SIGNED_OUT = (
 )
 
 
-# Cota estourada tambem chega em prosa, e a frase do modelo nao fala de cota:
-# ela diz que "nao pode criar mais" hoje. Quem sabe que e cota e o cliente, que
-# ja tem o numero — entao a deteccao olha o numero, nao o texto.
+# Frases com que o modelo avisa que bateu no limite. Sozinhas nao bastam — uma
+# recusa de conteudo tambem e prosa sem imagem — e o numero sozinho tambem nao:
+# medido nesta conta, uma geracao passou com a janela de 5h zerada, porque o
+# limite que vale e outro. Os dois juntos e que dao certeza.
+_AT_LIMIT = (
+    "can't create more",
+    "cannot create more",
+    "no more images",
+    "limit for today",
+    "try again tomorrow",
+    "more images for you today",
+    "more videos for you today",
+    "limite",
+    "amanhã",
+    "amanha",
+)
+
+
+def _sounds_at_limit(text: str) -> bool:
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in _AT_LIMIT)
+
+
 def _quota_exhausted(client) -> bool:
     raw = getattr(client, "quotas", None) or {}
     for value in raw.values():
@@ -222,7 +242,7 @@ class WebBackend(Backend):
         # que esconde a única coisa acionável — entrar de novo no Gemini.
         # Cota antes de sessao: as duas devolvem prosa sem imagem, mas a cota tem
         # um numero que prova, e a mensagem certa e "espere" e nao "entre de novo".
-        if not output.images and _quota_exhausted(client):
+        if not output.images and _quota_exhausted(client) and _sounds_at_limit(output.text or ""):
             raise WebQuotaError()
 
         if not output.images and _sounds_signed_out(output.text or ""):

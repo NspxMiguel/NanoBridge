@@ -249,3 +249,37 @@ async def test_exhausted_quota_says_wait_not_sign_in_again():
         await web.WebBackend().generate("x")
     assert "doctor" in str(err.value)
     web.WebBackend._client = None
+
+
+@pytest.mark.asyncio
+async def test_a_content_refusal_with_zero_quota_is_not_called_a_quota_error():
+    """Medido nesta conta: uma geracao passou com a janela de 5h zerada. O numero
+    sozinho nao prova nada, entao uma recusa de conteudo nao pode virar 'espere'."""
+    from nanobridge.errors import NoImageError
+
+    class Refusal:
+        images: list = []
+        text = "I can't generate that image because it goes against the policy."
+
+    class FakeChat:
+        metadata = ["c_1"]
+
+        async def send_message(self, *a, **k):
+            return Refusal()
+
+    class FakeClient:
+        quotas = {"None-11": {"remaining": 0, "total": 1200}}
+
+        def start_chat(self, **kw):
+            return FakeChat()
+
+        async def close(self):
+            return None
+
+    web.WebBackend._client = FakeClient()
+    from nanobridge import core
+
+    with pytest.raises(NoImageError) as err:
+        await core.generate("x", backend=web.WebBackend(), out_dir="/tmp")
+    assert "policy" in str(err.value)
+    web.WebBackend._client = None
