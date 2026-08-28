@@ -1,0 +1,252 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Uma Fase — feito com NanoBridge</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#12131c;color:#EAD4AA;font:14px ui-monospace,monospace;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       min-height:100vh;gap:12px}
+  h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.04em;color:#E4A672}
+  /* A resolução interna é sempre 640x360 (pixel art precisa disso); o que muda
+     é o tamanho na tela. Com image-rendering:pixelated a ampliação continua
+     dura, então dá para caber em qualquer painel sem borrar. */
+  #palco{display:flex;justify-content:center;width:100%}
+  #wrap{position:relative;line-height:0}
+  canvas{image-rendering:pixelated;border-radius:6px;display:block;
+         box-shadow:0 12px 40px rgba(0,0,0,.55);
+         width:100%;max-width:640px;height:auto}
+  #hud{position:absolute;inset:2% 3% auto 3%;line-height:1.2;display:flex;justify-content:space-between;
+       font-weight:700;text-shadow:0 2px 0 rgba(0,0,0,.55);pointer-events:none;font-size:13px}
+  #fim{position:absolute;inset:0;display:none;place-items:center;background:rgba(10,11,18,.82);
+       border-radius:6px;text-align:center;line-height:1.7}
+  #fim b{font-size:20px;color:#A7F070}
+  small{color:#B86F50}
+  kbd{background:#2a2233;border:1px solid #4a3b52;border-bottom-width:2px;border-radius:4px;
+      padding:1px 6px;color:#EAD4AA}
+</style>
+<h1>UMA FASE — todos os desenhos saíram do NanoBridge</h1>
+<div id="palco"><div id="wrap">
+  <canvas id="c" width="640" height="360"></canvas>
+  <div id="hud"><span id="moedas">✦ 0</span><span id="dica">← → mover · ESPAÇO pular</span></div>
+  <div id="fim"><div><b id="fimT"></b><br><span id="fimS"></span><br><small>ENTER para jogar de novo</small></div></div>
+</div></div>
+<small>Setas ou <kbd>A</kbd><kbd>D</kbd> · <kbd>espaço</kbd> pula · pule na cabeça do cogumelo</small>
+
+<script>
+// A largura vem do CSS; a altura precisa caber também, senão em painel baixo
+// o rodapé some. Um limite em px resolve os dois casos.
+function ajustar() {
+  const w = Math.min(640, innerWidth - 20, (innerHeight - 120) * (640 / 360));
+  document.getElementById("wrap").style.width = Math.max(240, Math.round(w)) + "px";
+}
+addEventListener("resize", ajustar);
+addEventListener("DOMContentLoaded", ajustar);
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+const W = cv.width, H = cv.height, T = 24;          // tile de 24px, o tamanho dos sprites
+
+const carregar = (src) => new Promise((ok, no) => {
+  const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error(src)); i.src = src;
+});
+
+// ── a fase, desenhada como texto ────────────────────────────────────────────
+//  #=tijolo  o=moeda  g=cogumelo  P=início  F=bandeira
+const MAPA = [
+  "                                                                  ",
+  "                                                                  ",
+  "                      ooo                                         ",
+  "                     #####            ooo                         ",
+  "                                     #####            o o o       ",
+  "          oo                                         #########    ",
+  "         ####          g                   g                     F",
+  "                  ###########       ###########       ############",
+  "   P   o                     o                 o                  ",
+  "##########  ###########  ###########  ###########  ##############",
+];
+const LINHAS = MAPA.length, COLUNAS = MAPA[0].length;
+const MUNDO_W = COLUNAS * T, MUNDO_H = LINHAS * T;
+
+let solidos = [], moedas = [], inimigos = [], heroi, camera = 0, pontos = 0, estado = "jogando", t = 0;
+
+function montarFase() {
+  solidos = []; moedas = []; inimigos = []; pontos = 0; camera = 0; t = 0; estado = "jogando";
+  let inicio = { x: 2 * T, y: 6 * T }, bandeira = null;
+  MAPA.forEach((linha, r) => [...linha].forEach((ch, c) => {
+    const x = c * T, y = r * T;
+    if (ch === "#") solidos.push({ x, y, w: T, h: T });
+    else if (ch === "o") moedas.push({ x: x + 3, y: y + 3, w: 18, h: 18, pego: false, fase: (c + r) * 0.6 });
+    else if (ch === "g") inimigos.push({ x, y: y + T - 22, w: 22, h: 22, vx: -0.55, vivo: true });
+    else if (ch === "P") inicio = { x, y };
+    else if (ch === "F") bandeira = { x: x + 6, y: y - T * 2, w: 12, h: T * 3 };
+  }));
+  heroi = { x: inicio.x, y: inicio.y, w: 14, h: 24, vx: 0, vy: 0, chao: false, olhando: 1, passo: 0, vivo: true };
+  return bandeira;
+}
+let bandeira = montarFase();
+
+// ── entrada ─────────────────────────────────────────────────────────────────
+const teclas = {};
+addEventListener("keydown", e => {
+  teclas[e.code] = true;
+  if (["ArrowLeft","ArrowRight","Space","ArrowUp"].includes(e.code)) e.preventDefault();
+  if (e.code === "Enter" && estado !== "jogando") { bandeira = montarFase(); }
+});
+addEventListener("keyup", e => teclas[e.code] = false);
+
+// ── física ──────────────────────────────────────────────────────────────────
+const bate = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+function mover(ent, dx, dy) {
+  ent.x += dx;
+  for (const s of solidos) if (bate(ent, s)) ent.x = dx > 0 ? s.x - ent.w : s.x + s.w;
+  ent.y += dy; ent.chao = false;
+  for (const s of solidos) if (bate(ent, s)) {
+    if (dy > 0) { ent.y = s.y - ent.h; ent.chao = true; } else { ent.y = s.y + s.h; }
+    ent.vy = 0;
+  }
+}
+
+function passo() {
+  if (estado !== "jogando") return;
+  t++;
+  const h = heroi;
+  const esq = teclas.ArrowLeft || teclas.KeyA, dir = teclas.ArrowRight || teclas.KeyD;
+  const alvo = (dir ? 2.9 : 0) - (esq ? 2.9 : 0);
+  h.vx += (alvo - h.vx) * 0.3;                        // aceleração suave
+  if (Math.abs(h.vx) > 0.2) h.olhando = Math.sign(h.vx);
+
+  // "coyote time": ainda dá para pular alguns quadros depois de sair da borda.
+  // Sem isso o pulo no limite do buraco falha e a culpa parece ser do jogador.
+  if (h.chao) h.coiote = 7; else h.coiote = Math.max(0, (h.coiote || 0) - 1);
+  // buffer: apertar pouco antes de aterrissar continua valendo
+  const querPular = teclas.Space || teclas.ArrowUp;
+  h.buffer = querPular ? 7 : Math.max(0, (h.buffer || 0) - 1);
+  if (h.buffer > 0 && h.coiote > 0) {
+    h.vy = -8.0; h.chao = false; h.coiote = 0; h.buffer = 0; h.idadePulo = 0;
+  } else h.idadePulo = (h.idadePulo || 99) + 1;
+  // Pulo variável: soltar cedo sobe menos — mas só depois de alguns quadros.
+  // Cortando no primeiro, um toque rápido virava um pulinho de nada, e a fase
+  // ficava impossível sem ninguém entender por quê.
+  if (!querPular && h.vy < -3 && h.idadePulo > 6) h.vy = -3;
+  h.vy = Math.min(h.vy + 0.42, 12);                   // gravidade
+  mover(h, h.vx, h.vy);
+  if (Math.abs(h.vx) > 0.4 && h.chao) h.passo += Math.abs(h.vx) * 0.13; else h.passo = 0;
+
+  for (const m of moedas) if (!m.pego && bate(h, m)) { m.pego = true; pontos++; }
+
+  for (const g of inimigos) {
+    if (!g.vivo) continue;
+    // vira ao encontrar parede ou fim do chão
+    const frente = { x: g.x + (g.vx > 0 ? g.w + 1 : -2), y: g.y + g.h + 1, w: 1, h: 1 };
+    const parede = { x: g.x + g.vx * 2, y: g.y, w: g.w, h: g.h };
+    if (!solidos.some(s => bate(frente, s)) || solidos.some(s => bate(parede, s))) g.vx *= -1;
+    g.x += g.vx;
+    if (bate(h, g)) {
+      if (h.vy > 1 && h.y + h.h - g.y < 16) { g.vivo = false; h.vy = -5.6; pontos += 2; }
+      else { h.vivo = false; estado = "perdeu"; }
+    }
+  }
+
+  if (h.y > MUNDO_H + 60) { h.vivo = false; estado = "perdeu"; }
+  if (bandeira && bate(h, bandeira)) estado = "ganhou";
+
+  camera = Math.max(0, Math.min(h.x - W / 2 + 40, MUNDO_W - W));
+  document.getElementById("moedas").textContent = "✦ " + pontos;
+  if (estado !== "jogando") {
+    const f = document.getElementById("fim");
+    f.style.display = "grid";
+    document.getElementById("fimT").textContent = estado === "ganhou" ? "CHEGOU!" : "OPA!";
+    document.getElementById("fimS").textContent = estado === "ganhou"
+      ? `${pontos} pontos` : "tente de novo";
+  } else document.getElementById("fim").style.display = "none";
+}
+
+// ── desenho ─────────────────────────────────────────────────────────────────
+let img = {};
+function nuvem(x, y, e) {
+  ctx.fillStyle = "rgba(255,255,255,.82)";
+  [[0,0,15],[16,-7,12],[31,0,14],[15,6,13]].forEach(([dx,dy,r]) => {
+    ctx.beginPath(); ctx.arc(x+dx*e, y+dy*e, r*e, 0, 7); ctx.fill();
+  });
+}
+
+function desenhar() {
+  // céu
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#5FB9E8"); g.addColorStop(.62, "#9BD9F2"); g.addColorStop(1, "#D9F0F7");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // nuvens em parallax
+  for (let i = 0; i < 5; i++) {
+    const x = ((i * 260 - camera * 0.25) % (MUNDO_W + 300) + MUNDO_W + 300) % (MUNDO_W + 300) - 120;
+    nuvem(x, 48 + (i % 3) * 34, .9 + (i % 2) * .35);
+  }
+  // morros: uma faixa contínua com bossas, para não flutuarem soltos
+  const baseY = H - 26;
+  ctx.fillStyle = "#5FA83A";
+  ctx.beginPath(); ctx.moveTo(-40, H);
+  for (let i = -1; i < 10; i++) {
+    const x = i * 190 - (camera * 0.35) % 190;
+    ctx.lineTo(x, baseY); ctx.arc(x + 68, baseY, 68, Math.PI, 0);
+  }
+  ctx.lineTo(W + 60, H); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#7FC94A";
+  ctx.beginPath(); ctx.moveTo(-40, H);
+  for (let i = -1; i < 8; i++) {
+    const x = i * 250 - (camera * 0.55) % 250;
+    ctx.lineTo(x, baseY + 8); ctx.arc(x + 92, baseY + 8, 92, Math.PI, 0);
+  }
+  ctx.lineTo(W + 60, H); ctx.closePath(); ctx.fill();
+
+  ctx.save(); ctx.translate(-Math.round(camera), 0);
+
+  for (const s of solidos) ctx.drawImage(img.brick, s.x, s.y, T, T);
+
+  for (const m of moedas) if (!m.pego) {
+    const bob = Math.sin(t * 0.09 + m.fase) * 2.5;
+    const largura = Math.abs(Math.cos(t * 0.06 + m.fase)) * 18 + 4;   // gira
+    ctx.drawImage(img.coin, m.x + (18 - largura) / 2, m.y + bob, largura, 18);
+  }
+
+  for (const gg of inimigos) if (gg.vivo) {
+    const squash = Math.sin(t * 0.18) * 1.6;
+    ctx.drawImage(img.goomba, gg.x, gg.y - squash, gg.w, gg.h + squash);
+  }
+
+  if (bandeira) {
+    ctx.fillStyle = "#733E39"; ctx.fillRect(bandeira.x + 4, bandeira.y, 4, bandeira.h);
+    ctx.fillStyle = "#A22633";
+    ctx.beginPath(); ctx.moveTo(bandeira.x + 8, bandeira.y + 4);
+    ctx.lineTo(bandeira.x + 34, bandeira.y + 12); ctx.lineTo(bandeira.x + 8, bandeira.y + 20);
+    ctx.fill();
+  }
+
+  // herói: sem folha de corrida, o movimento vem de código —
+  // inclina ao correr, agacha ao aterrissar, estica no ar
+  const h = heroi;
+  ctx.save();
+  const cx = h.x + h.w / 2, py = h.y + h.h;
+  ctx.translate(cx, py); ctx.scale(h.olhando, 1);
+  const correndo = Math.abs(h.vx) > 0.4 && h.chao;
+  const esticaY = h.chao ? 1 : (h.vy < 0 ? 1.08 : 0.95);
+  const esticaX = h.chao ? 1 : (h.vy < 0 ? 0.94 : 1.05);
+  // no chão correndo: ciclo de 4 quadros. no ar: um quadro só, esticado.
+  const quadro = correndo ? img.run[Math.floor(h.passo) % img.run.length]
+                          : (h.chao ? img.run[0] : img.run[1]);
+  const lw = 24, lh = 24;                       // os quadros vêm em 24x24
+  ctx.drawImage(quadro, -lw / 2 * esticaX, -lh * esticaY, lw * esticaX, lh * esticaY);
+  ctx.restore();
+
+  ctx.restore();
+}
+
+(async () => {
+  for (const n of ["hero", "goomba", "coin", "brick"]) img[n] = await carregar(`assets/${n}.png`);
+  img.run = [];
+  for (let i = 1; i <= 4; i++) img.run.push(await carregar(`assets/run-frames/run-0${i}.png`));
+  ajustar();
+  (function laco() { passo(); desenhar(); requestAnimationFrame(laco); })();
+  window.__pronto = true;
+})();
+</script>
