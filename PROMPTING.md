@@ -121,6 +121,33 @@ this automatically.
 what `variations` exists for: it pushes each attempt in a different direction on
 purpose.
 
+## Textures: always pass a size
+
+A texture without `--size` comes out around 2048px square. That is a nice
+picture and a useless game tile: at 480px of canvas it never repeats, so you
+never find out whether it tiles, and you ship megabytes for a floor.
+
+```bash
+nanobridge texture "dungeon flagstones" --size 256 --preview
+```
+
+256 or 128 is what a tile actually wants. Resizing does not undo the seam work:
+the resize happens before the seam is measured, so the number describes the tile
+you will ship. The same floor measured 1.88/2.34 at 2048px and 0.79/1.07 at
+256px.
+
+**Say the contrast you want.** "dark dungeon floor" plus a 16-colour palette
+collapses into near-black mush — correct to the prompt, unusable in a game.
+"mid grey, clear contrast between stones and mortar" gives something a character
+can visibly stand on.
+
+## Sheets and pixel art
+
+`--pixels` on a sheet applies to each **frame**, after the slice. Asking for
+`--pixels 32` on a `4x1` sheet gives four 32px frames, not a 32px sheet. (It used
+to do the latter, which left each frame 8px wide and looked like the model had
+failed.)
+
 ## Costs
 
 Every generation spends the Gemini plan's quota; `doctor` shows what is left.
