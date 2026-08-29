@@ -34,6 +34,39 @@ CAMINHOS = (
 )
 
 
+#: O que roda quando a janela abre. Sem isto o Blender mostra a cena com a vista
+#: padrão e o modelo aparece do tamanho de um grão no meio da grade — a malha
+#: reconstruída mede cerca de um metro, e a vista padrão enquadra dez. E o
+#: sombreado padrão é cinza chapado, que esconde justamente a textura que o
+#: refino acabou de assar.
+AO_ABRIR = """
+import bpy
+
+
+def _nanobridge_enquadrar():
+    tela = getattr(bpy.context, "screen", None)
+    if tela is None:
+        return 0.2      # a janela ainda nao existe: tenta de novo daqui a pouco
+    for area in tela.areas:
+        if area.type != "VIEW_3D":
+            continue
+        area.spaces[0].shading.type = "MATERIAL"
+        regiao = next((r for r in area.regions if r.type == "WINDOW"), None)
+        if regiao is None:
+            continue
+        try:
+            with bpy.context.temp_override(area=area, region=regiao):
+                bpy.ops.object.select_all(action="SELECT")
+                bpy.ops.view3d.view_selected()
+        except Exception:
+            pass
+    return None
+
+
+bpy.app.timers.register(_nanobridge_enquadrar, first_interval=0.2)
+""".strip()
+
+
 def find_blender() -> str | None:
     de_fora = os.environ.get("NANOBRIDGE_BLENDER")
     if de_fora and Path(de_fora).exists():

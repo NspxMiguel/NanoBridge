@@ -517,8 +517,15 @@ def _cmd_blender(args: argparse.Namespace) -> int:
 
         raise BlenderMissingError()
     caminho = core.existing_path(args.mesh)
+    # start_new_session: sem isso o Blender morre junto com o shell que o
+    # chamou, e quem roda o comando dentro de um agente ou de um script vê a
+    # janela abrir e fechar na hora. Ele é para ficar aberto.
+    def abrir(argumentos):
+        subprocess.Popen(argumentos, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     if caminho.suffix.lower() == ".blend":
-        subprocess.Popen([binario, str(caminho)])
+        abrir([binario, str(caminho), "--python-expr", ponte.AO_ABRIR])
     else:
         # Sem .blend, é preciso importar: o Blender não abre GLB pela linha de
         # comando, e mandar `--python-expr` é o único jeito de fazer isso sem
@@ -531,8 +538,9 @@ def _cmd_blender(args: argparse.Namespace) -> int:
         chamada = importadores.get(caminho.suffix.lower())
         if not chamada:
             raise SystemExit(f"o Blender não importa {caminho.suffix} por aqui")
-        subprocess.Popen([binario, "--python-expr",
-                          "import bpy; bpy.ops.wm.read_homefile(use_empty=True); " + chamada % str(caminho)])
+        abrir([binario, "--python-expr",
+               "import bpy; bpy.ops.wm.read_homefile(use_empty=True); "
+               + chamada % str(caminho) + "\n" + ponte.AO_ABRIR])
     print(t("blender.opening", path=caminho))
     return 0
 

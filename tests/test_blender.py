@@ -187,3 +187,29 @@ def test_a_retopologia_acerta_o_orcamento_em_varias_densidades(tmp_path, alvo):
     assert alvo * 0.5 <= resultado.after["faces"] <= alvo * 1.5, (
         f"pediu {alvo} faces e veio {resultado.after['faces']}"
     )
+
+
+def test_o_script_de_abertura_compila():
+    """Ele viaja como texto em `--python-expr`, então erro de sintaxe só
+    apareceria na tela do usuário, com a janela abrindo sem enquadrar nada."""
+    import ast
+
+    ast.parse(blender.AO_ABRIR)
+    assert "view3d.view_selected" in blender.AO_ABRIR
+    assert "bpy.app.timers.register" in blender.AO_ABRIR, (
+        "sem temporizador o script roda antes de a janela existir, e `bpy.context.screen` é None"
+    )
+
+
+@tem_blender
+def test_o_script_de_abertura_nao_quebra_sem_janela(tmp_path):
+    """Rodar sem interface é o pior caso: `bpy.context.screen` não existe. O
+    script tem que devolver 'tento de novo' em vez de derrubar o Blender."""
+    import subprocess
+
+    saida = subprocess.run(
+        [blender.find_blender(), "-b", "--factory-startup", "--python-expr", blender.AO_ABRIR],
+        capture_output=True, text=True, timeout=120,
+    )
+    junto = (saida.stdout + saida.stderr).lower()
+    assert "traceback" not in junto and "error:" not in junto
