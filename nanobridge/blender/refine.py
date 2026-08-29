@@ -239,6 +239,22 @@ def assar_cor(destino_obj, tamanho: int, arquivo: str, origem_obj=None,
     return arquivo
 
 
+def _copia_reduzida(objeto, densidade: int):
+    """Um duplicado do original, decimado e limpo. Cada tentativa parte daqui,
+    porque decimar é destrutivo e a tentativa seguinte precisa da malha inteira."""
+    bpy.ops.object.select_all(action="DESELECT")
+    objeto.select_set(True)
+    bpy.context.view_layer.objects.active = objeto
+    bpy.ops.object.duplicate()
+    copia = bpy.context.view_layer.objects.active
+    copia.name = "nanobridge_low"
+    reduzir(copia, densidade)
+    # Limpar DEPOIS de reduzir: o decimate colapsa aresta e cria face
+    # degenerada nova, e é ela que o QuadriFlow recusa.
+    costurar(copia)
+    return copia
+
+
 def retopologizar(objeto, alvo_faces: int):
     """QuadriFlow: refaz a malha em **quadriláteros**, não em triângulos.
 
@@ -247,50 +263,49 @@ def retopologizar(objeto, alvo_faces: int):
     não aceita loop de aresta e nenhum artista aceitaria. QuadriFlow devolve
     quadrilátero de tamanho parecido, que é o que se modela à mão.
 
-    Devolve o objeto novo; o original fica na cena, porque é dele que a cor vai
-    ser assada depois.
-    """
-    bpy.ops.object.select_all(action="DESELECT")
-    objeto.select_set(True)
-    bpy.context.view_layer.objects.active = objeto
-    bpy.ops.object.duplicate()
-    baixa = bpy.context.view_layer.objects.active
-    baixa.name = "nanobridge_low"
-    # QuadriFlow trabalha melhor com entrada já enxuta, e é ordens de grandeza
-    # mais rápido: reduzir para umas poucas dezenas de milhares primeiro é o que
-    # faz o passo custar segundos em vez de minutos.
-    reduzir(baixa, min(60000, max(alvo_faces * 4, 20000)))
-    # Limpar DE NOVO, agora depois de reduzir. O decimate colapsa aresta e cria
-    # face degenerada nova, e o QuadriFlow recusa por causa dela — medido num
-    # baú de tesouro: com a limpeza só antes de reduzir ele cancelava; com esta
-    # segunda passada, terminou em 5 519 quadriláteros.
-    costurar(baixa)
+    A tentativa é escalonada porque o QuadriFlow exige malha manifold e **basta
+    uma aresta ruim** para ele recusar a malha inteira — em silêncio, devolvendo
+    triângulo. Medido neste baú: entrada de 24 mil faces terminou; 40 mil, 60 mil
+    e 90 mil cancelaram, todas. Quanto mais densa a entrada decimada, maior a
+    chance de sobrar uma aresta com três faces. Então: tenta denso, tenta ralo,
+    e só depois redesenha por voxel — que é fechado por construção, mas perde
+    detalhe fino.
 
-    def tentar():
+    Devolve (malha nova, método). O original fica na cena: é dele que a cor é
+    assada depois.
+    """
+    def tentar(alvo):
         try:
-            return bpy.ops.object.quadriflow_remesh(
-                target_faces=int(alvo_faces), use_preserve_sharp=False,
+            return "FINISHED" in bpy.ops.object.quadriflow_remesh(
+                target_faces=int(alvo), use_preserve_sharp=False,
                 use_preserve_boundary=True, smooth_normals=True)
         except RuntimeError:
-            return {"CANCELLED"}
+            return False
 
-    if "FINISHED" not in tentar():
-        # QuadriFlow exige malha fechada e sem borda solta, e reconstrução de IA
-        # frequentemente não é: sobra buraco, face invertida, aresta com três
-        # faces. Medido num baú de tesouro — o operador desistia **em silêncio**
-        # e o resultado saía com 0% de quadriláteros, sem nenhum aviso.
-        #
-        # O remesh por voxel resolve porque ele não conserta a malha: ele
-        # redesenha a superfície inteira a partir do volume, e o que sai é
-        # fechado por construção. Perde detalhe fino, e é por isso que é plano B.
-        voxel = baixa.modifiers.new(name="voxel", type="REMESH")
-        voxel.mode = "VOXEL"
-        voxel.voxel_size = max(baixa.dimensions) / 128.0
-        bpy.ops.object.modifier_apply(modifier=voxel.name)
-        if "FINISHED" not in tentar():
-            return baixa, "decimate"
-        return baixa, "quadriflow-voxel"
-    return baixa, "quadriflow"
+    candidatas = []
+    for densidade in dict.fromkeys((min(60000, max(alvo_faces * 3, 24000)), 24000, 12000)):
+        copia = _copia_reduzida(objeto, densidade)
+        if tentar(alvo_faces):
+            for descartar in candidatas:
+                bpy.data.objects.remove(descartar, do_unlink=True)
+            return copia, "quadriflow"
+        candidatas.append(copia)
+
+    # Plano B: redesenhar a superfície a partir do volume. Sempre fechada, e por
+    # isso sempre aceita — ao custo de perder detalhe fino.
+    copia = candidatas[0]
+    bpy.ops.object.select_all(action="DESELECT")
+    copia.select_set(True)
+    bpy.context.view_layer.objects.active = copia
+    voxel = copia.modifiers.new(name="voxel", type="REMESH")
+    voxel.mode = "VOXEL"
+    voxel.voxel_size = max(copia.dimensions) / 128.0
+    bpy.ops.object.modifier_apply(modifier=voxel.name)
+    costurar(copia)
+    metodo = "quadriflow-voxel" if tentar(alvo_faces) else "voxel"
+    for descartar in candidatas[1:]:
+        bpy.data.objects.remove(descartar, do_unlink=True)
+    return copia, metodo
 
 
 def exportar(objeto, caminho: str) -> None:

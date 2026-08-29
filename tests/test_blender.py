@@ -168,3 +168,22 @@ def test_o_glb_tritura_os_quadrilateros_e_o_blend_nao(tmp_path):
     malha = next(iter(cena.geometry.values()))
     assert malha.faces.shape[1] == 3, "o glTF sempre chega triangulado"
     assert len(malha.faces) >= resultado.after["faces"]
+
+
+@tem_blender
+@pytest.mark.parametrize("alvo", [400, 3000])
+def test_a_retopologia_acerta_o_orcamento_em_varias_densidades(tmp_path, alvo):
+    """A tentativa é escalonada porque o QuadriFlow recusa a malha inteira por
+    causa de **uma** aresta ruim, e a chance de sobrar uma cresce com a densidade
+    da entrada decimada. Medido num baú: entrada de 24 mil faces terminou; 40,
+    60 e 90 mil cancelaram. Sem escalonar, orçamento alto caía no plano B e
+    entregava dez vezes as faces pedidas, dizendo 100% de quadriláteros — o que
+    é verdade e não é o que foi pedido.
+    """
+    resultado = core.refine_mesh(bicho(tmp_path / "b.glb", subdivisoes=4),
+                                 out_dir=tmp_path / f"s{alvo}", name="b", faces=alvo,
+                                 texture_size=128, formats=[".glb"])
+    assert resultado.quad_ratio == 1.0
+    assert alvo * 0.5 <= resultado.after["faces"] <= alvo * 1.5, (
+        f"pediu {alvo} faces e veio {resultado.after['faces']}"
+    )

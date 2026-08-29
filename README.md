@@ -334,6 +334,13 @@ it works in any engine, any viewer, any renderer.
 Check `quad_ratio` in the output: **1.0** means the retopology landed. Anything
 lower means it fell back to decimation and the mesh is still triangles.
 
+QuadriFlow refuses a whole mesh over a **single** bad edge, and refuses it
+silently — so the retopology is attempted at several input densities before it
+gives up. That is not belt-and-braces: measured on this chest, feeding it 24 000
+faces finished, while 40 000, 60 000 and 90 000 all cancelled, on the same
+model. Denser decimated input means a higher chance one three-faced edge
+survives.
+
 ### And a real render, not a rasteriser
 
 ```bash
