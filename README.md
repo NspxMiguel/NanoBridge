@@ -2,14 +2,15 @@
 
 # NanoBridge
 
-**Nano Banana image generation *and* single-image-to-3D, wired into agents as an
-MCP server and a CLI** — using the Gemini plan the account already has, not a
-per-image bill.
+**Nano Banana image generation, single-image-to-3D, and a Blender refinement
+pipeline — wired into agents as an MCP server and a CLI.** Using the Gemini plan
+the account already has, not a per-image bill.
 
 [![tests](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml/badge.svg)](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml)
 [![MCP](https://img.shields.io/badge/MCP-server_included-8a63d2)](#use-it-from-an-agent)
 [![Cost](https://img.shields.io/badge/cost-your_existing_Gemini_plan-3fb950)](#why-not-just-call-the-api)
 [![3D](https://img.shields.io/badge/3D-image_to_mesh-f0883e)](#the-second-model-3d)
+[![Blender](https://img.shields.io/badge/Blender-quads_UV_baked_texture-ea7600)](#a-mesh-is-not-an-asset)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](#install)
 [![License](https://img.shields.io/github/license/NspxMiguel/NanoBridge?color=lightgrey)](LICENSE)
 
@@ -249,14 +250,29 @@ four-colour pixel art.
 | image → mesh | [TripoSR](https://huggingface.co/spaces/stabilityai/TripoSR) (MIT) or [Hunyuan3D-2](https://huggingface.co/spaces/tencent/Hunyuan3D-2) | free public Space — you pay in queueing |
 | mesh → frames | a software rasteriser in this repo | local, no GPU, no network |
 
-The two engines are not interchangeable, and `--engine` picks between them:
+Five engines are wired in, and they are not interchangeable — `--engine` picks:
 
-- **TripoSR** is the default because it returns **vertex colours** — a sprite
-  needs the colour, and it arrives already painted.
-- **Hunyuan3D-2** reconstructs better geometry (measured on the same reference:
-  989 448 faces against 285 267, with cleaner feet and cap spots) but hands back
-  an **unpainted mesh**. Reach for it when the shape matters more than the paint,
-  or when TripoSR is queueing.
+| Engine | Geometry | Colour | Needs a token |
+| --- | --- | --- | --- |
+| **Hunyuan3D-2.1** (Tencent) | best available for free | none | no |
+| **TripoSR** (Stability AI + Tripo, MIT) | fair | **vertex colours** | no |
+| **Hunyuan3D-2** (Tencent) | good | none | no |
+| **TRELLIS** (MIT) | very good | **textured, real UVs** | yes |
+| **Hi3DGen** (MIT) | highest detail | none | yes |
+
+Colour is what makes a finished asset, so TripoSR is what `sprite3d` reaches for;
+`mesh` starts from the best geometry.
+
+**About that token.** The last two run on Hugging Face ZeroGPU, and ZeroGPU gives
+an anonymous caller **zero seconds** — they can never answer without one, so
+NanoBridge skips them rather than spending the round trip. A free Hugging Face
+account fixes it: put the token in `HF_TOKEN` (or `NANOBRIDGE_HF_TOKEN`) and they
+join the queue. Nothing else changes, and nothing is paid.
+
+One thing that was tried and does not work: baking one engine's colour onto
+another engine's geometry. They reconstruct the same reference but agree on
+neither orientation nor proportion, and the texture comes out smeared. Measured,
+then cut.
 
 The rasteriser is NumPy, not OpenGL. That is deliberate: a pre-rendered sprite is
 a small image, and the output has to be **identical on every machine**, including
@@ -276,6 +292,80 @@ download NumPy and trimesh:
 pip install 'nanobridge[3d]'
 ```
 
+Refining and rendering additionally need Blender — see
+[A mesh is not an asset](#a-mesh-is-not-an-asset).
+
+## A mesh is not an asset
+
+This is the part that decides whether the 3D is usable, and it is the part
+everything else skips.
+
+What a 3D generator returns is a **shell**: two to five hundred thousand
+irregular triangles, no UVs, colour stored per vertex — a format only its own
+viewer understands. Open it in Blender and you get a grey blob. Drop it in Godot
+or Unity and it has no texture. It is a preview, not a model.
+
+`refine` runs Blender headless and does what an artist would, in the same order:
+
+```bash
+nanobridge refine chest.glb --faces game -f .glb -f .fbx -f .blend
+# 279 329 faces → 5 519 (100% quads), UV created, texture chest-albedo.png
+```
+
+<p align="center">
+  <img src="assets/blender-render.png" width="720" alt="a treasure chest rendered from four angles in Blender">
+</p>
+
+| Step | Why it is not optional |
+| --- | --- |
+| weld, dissolve degenerate faces, recalculate normals | a single non-manifold edge makes QuadriFlow refuse the whole mesh |
+| **QuadriFlow retopology** | triangle soup deforms badly when animated and takes no edge loops; quads are what a modeller hands over |
+| Smart UV unwrap | no UVs, no texture — and no texture, no colour outside the generator |
+| **bake the dense mesh's colour onto the clean one** | the same high-to-low transfer used between a sculpt and a game model |
+| export `.glb` `.fbx` `.obj` `.usdz` `.blend` | with the image packed into the `.blend`, so it opens anywhere |
+
+<p align="center">
+  <img src="assets/blender-albedo.png" width="360" alt="the baked UV atlas: wood planks, iron bands, rivets">
+</p>
+
+That atlas is the whole point. It came out of the mesh's own vertex colours, and
+it works in any engine, any viewer, any renderer.
+
+Check `quad_ratio` in the output: **1.0** means the retopology landed. Anything
+lower means it fell back to decimation and the mesh is still triangles.
+
+### And a real render, not a rasteriser
+
+```bash
+nanobridge render chest.blend --frames 8 --pitch 30 --engine cycles --gif
+nanobridge blender chest.blend       # or just open it and look
+```
+
+Three-point studio lighting, an orthographic camera framed across every angle at
+once, transparent film. EEVEE takes seconds; `--engine cycles` takes minutes and
+looks it. This is separate from `turntable`, which rasterises points in NumPy —
+that one is for small sprites and runs anywhere; this one is for showing the
+model as it is.
+
+Blender is an external dependency on purpose. It is a 400MB download, and nobody
+who only wants 2D sprites should be made to install it:
+
+```bash
+brew install --cask blender
+```
+
+### The whole thing in one command
+
+```bash
+nanobridge model "a wooden treasure chest with iron bands and a heavy padlock" --kind prop
+```
+
+Reference → mesh → refine → render, four models and programs in a row. **Set
+`--kind`**: `character` asks for an A-pose and a full body, `prop` asks for a
+three-quarter view with no face and no limbs. It matters — asking for a body
+when the subject is an object gets you one, and the first measured run came back
+with a treasure chest that had arms and legs.
+
 ## Use it from an agent
 
 The MCP server exposes `generate_cast`, `generate_sprite`, `animate_sprite`,
@@ -283,8 +373,9 @@ The MCP server exposes `generate_cast`, `generate_sprite`, `animate_sprite`,
 `generate_image`, `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`,
 `pack_atlas`, `build_normal_map`, `check_tileable`, `repair_tileable`,
 `list_atlas_formats`, `list_palettes`, `extract_palette`, `apply_palette`,
-`nanobridge_status` and `nanobridge_reset` — plus `generate_sprite_3d`,
-`generate_mesh`, `render_turntable` and `list_mesh_engines` for the 3D half.
+`nanobridge_status` and `nanobridge_reset` — plus `generate_model_3d`,
+`generate_sprite_3d`, `generate_mesh`, `refine_mesh`, `render_mesh`,
+`render_turntable`, `list_mesh_engines` and `blender_status` for the 3D half.
 
 `generate_cast` is the one to reach for when the task is "a set of characters"
 rather than one image — it is the whole coherence story in a single call.

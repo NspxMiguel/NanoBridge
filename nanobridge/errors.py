@@ -75,3 +75,16 @@ class MeshBackendError(NanoBridgeError):
 class NoMeshEngineError(NanoBridgeError):
     def __init__(self) -> None:
         super().__init__(t("err.mesh_no_engine"))
+
+
+class BlenderMissingError(NanoBridgeError):
+    """Sem Blender não há refino. É dependência externa de propósito: são 400 MB,
+    e quem só quer sprite 2D não pode ser obrigado a baixar isso."""
+
+    def __init__(self) -> None:
+        super().__init__(t("err.blender_missing"))
+
+
+class BlenderError(NanoBridgeError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(t("err.blender", detail=detail))

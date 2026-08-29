@@ -55,27 +55,39 @@ def test_a_fila_passa_para_o_proximo_motor_quando_o_primeiro_cai(tmp_path, monke
         return ClienteFalso(espaco)
 
     monkeypatch.setattr(mesh3d, "_client", cliente)
-    monkeypatch.setattr(
-        mesh3d.TripoSR, "call", lambda self, c, img: (_ for _ in ()).throw(RuntimeError("fila cheia"))
-    )
-    monkeypatch.setattr(mesh3d.Hunyuan, "call", lambda self, c, img: [{"value": glb}])
+    # Só o último da fila responde. Os nomes vêm da fila de verdade, e não de
+    # uma lista escrita à mão: assim o teste continua valendo quando entrar
+    # motor novo, que é exatamente quando ele precisa valer.
+    fila = mesh3d.find(None)
+    alvo = fila[-1].name
 
-    saida, motor = mesh3d.to_mesh(glb, tmp_path / "saida.glb")
-    assert motor.name == "hunyuan"
+    # O despacho é por NOME, não por classe: dois motores da fila são instâncias
+    # da mesma classe (o Hunyuan 2.0 e o 2.1), então remendar a classe do último
+    # faria o primeiro responder também — e o teste passaria medindo outra coisa.
+    def responder(self, c, img):
+        if self.name != alvo:
+            raise RuntimeError("fila cheia")
+        return [{"value": glb}]
+
+    for classe in {type(m) for m in fila}:
+        monkeypatch.setattr(classe, "call", responder)
+
+    saida, escolhido = mesh3d.to_mesh(glb, tmp_path / "saida.glb")
+    assert escolhido.name == fila[-1].name
     assert saida.exists()
-    assert len(chamados) == 2
+    assert len(chamados) == len(fila)
 
 
 def test_quando_todos_caem_o_erro_lista_cada_recusa(tmp_path, monkeypatch):
     glb = malha_falsa(tmp_path / "c.glb")
     monkeypatch.setattr(mesh3d, "_client", lambda espaco: object())
-    for classe in (mesh3d.TripoSR, mesh3d.Hunyuan):
-        monkeypatch.setattr(
-            classe, "call", lambda self, c, img: (_ for _ in ()).throw(RuntimeError("caiu"))
-        )
+    for motor in mesh3d.find(None):
+        monkeypatch.setattr(type(motor), "call",
+                            lambda self, c, img: (_ for _ in ()).throw(RuntimeError("caiu")))
     with pytest.raises(MeshBackendError) as erro:
         mesh3d.to_mesh(glb, tmp_path / "x.glb")
-    assert "triposr" in str(erro.value) and "hunyuan" in str(erro.value)
+    for motor in mesh3d.find(None):
+        assert motor.name in str(erro.value)
 
 
 def test_cada_motor_declara_para_onde_o_modelo_nasce_olhando():

@@ -184,3 +184,17 @@ the same one:
 Because the reference is the step that fails, generate it on its own with `gen`
 when it matters, look at it, and pass the one you like to `mesh` — that is the
 whole reason the three steps are separate commands.
+
+### And say what kind of thing it is
+
+`sprite3d` and `model` take `--kind`, and it changes the reference prompt:
+
+- `character` — "standing in a neutral A-pose with the arms slightly away from
+  the body, full body visible from head to feet"
+- `prop` — "in a three-quarter view showing the front and one side, no
+  character, no face, no limbs"
+- `auto` (the default) — neither, which is safe but vaguer
+
+Leaving it on `auto` is fine. Getting it *wrong* is not: the first version of
+this template demanded a full body for everything, and a treasure chest came
+back with arms and legs, because it had been told to draw a body.

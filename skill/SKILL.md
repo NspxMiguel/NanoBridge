@@ -53,8 +53,35 @@ Reach for `generate_sprite` when there is genuinely one thing to draw.
 | a repeating surface | `generate_texture` — measures the seam instead of promising it |
 | lighting a 2D sprite | `build_normal_map` — local, no quota |
 | a character seen from **several angles** | `generate_sprite_3d` — builds real geometry, then renders it |
+| a 3D **asset** for a game or for Blender | `generate_model_3d` — mesh, then quads, UVs and a baked texture |
+| a raw mesh someone else made | `refine_mesh` — the same clean-up, on any `.glb`/`.obj` |
 | a `.glb` you already have | `render_turntable` — local, no quota, no network |
 | one sprite | `generate_sprite` |
+
+## A mesh is not an asset
+
+`generate_mesh` returns a **shell**: two to five hundred thousand irregular
+triangles, no UVs, colour per vertex. It is a preview. Handing that to someone
+as a 3D asset is wrong — in Blender it is a grey blob, in a game engine it has
+no texture.
+
+`refine_mesh` is what makes it real, running Blender headless: weld and fix
+normals, retopologise into **quads** with QuadriFlow, UV unwrap, bake the dense
+mesh's colour onto the clean topology, export `.glb`/`.fbx`/`.obj`/`.usdz`/
+`.blend`. `generate_model_3d` does the whole chain from a prompt.
+
+Three things to check in the result, because each has bitten:
+
+- **`quad_ratio` must be 1.0.** Lower means QuadriFlow refused and it fell back
+  to decimation — the mesh is still triangles, and the tool does not shout.
+- **`texture` must not be null.** Null means the mesh carried no colour, which
+  is normal for the Hunyuan engines and means geometry only.
+- **`.glb` always arrives triangulated** — glTF has no quads. To show topology,
+  open the `.blend`.
+
+Blender is required for these two and is not installed by default: call
+`blender_status` before promising a refine, and tell the user
+`brew install --cask blender` if it is missing.
 
 ## The 3D half, and its one hard rule
 
@@ -62,6 +89,11 @@ Reach for `generate_sprite` when there is genuinely one thing to draw.
 single-image-to-3D model reconstructs a mesh from it, and a local rasteriser
 spins that mesh into an N-direction sprite sheet. `generate_mesh` and
 `render_turntable` are the same steps split up, for when only one needs redoing.
+
+**Set `kind`.** `character` asks for an A-pose and a full body; `prop` asks for
+a three-quarter view with no face and no limbs. It is not cosmetic: asking for a
+body when the subject is an object gets you one — a treasure chest came back with
+arms and legs on the first measured run.
 
 **The rule: describe a physical object, never the art style.** The
 reconstruction needs volume and shading to read. "a round brown mushroom enemy

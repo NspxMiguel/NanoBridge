@@ -863,11 +863,23 @@ def build_normal_map(
 # sprite de 32×32 vira uma placa de 7% de profundidade, porque não há volume
 # nenhum na imagem para o modelo reconstruir.
 MESH_REF_TEMPLATE = (
-    "3D render of {subject}, single character centered in frame, "
-    "full body visible from head to feet, standing in a neutral A-pose facing the camera, "
+    "3D render of {subject}, one single subject centered in frame, "
+    "the whole thing visible with nothing cropped, facing the camera, {pose}"
     "soft even studio lighting, matte clay-like shading, no harsh shadows, "
-    "plain flat white background, no floor, no props, no text"
+    "plain flat white background, no floor, no extra objects, no text"
 )
+
+#: O que se acrescenta conforme o assunto. A versão anterior exigia "full body
+#: from head to feet, A-pose" para tudo, e o modelo obedecia: um baú de tesouro
+#: voltou com braços e pernas, porque foi mandado desenhar um corpo. Pedir pose
+#: humana só quando há corpo humano é a correção.
+MESH_POSES = {
+    "auto": "",
+    "character": "standing in a neutral A-pose with the arms slightly away from the body, "
+                 "full body visible from head to feet, ",
+    "prop": "in a three-quarter view showing the front and one side, "
+            "no character, no face, no limbs, ",
+}
 
 #: Inclinação padrão da câmera na volta. 0° é a vista lateral pura dos jogos de
 #: plataforma; 30° é a isométrica clássica. 15° é o meio-termo que mostra o topo
@@ -1020,6 +1032,7 @@ async def sprite_3d(
     pixels: int | None = None,
     palette: str | None = None,
     reference: str | Path | None = None,
+    kind: str = "auto",
     on_stage=None,
     **kwargs,
 ) -> Mesh3D:
@@ -1038,7 +1051,7 @@ async def sprite_3d(
         referencia = existing_path(reference)
         gerado = None
     else:
-        prompt = MESH_REF_TEMPLATE.format(subject=subject)
+        prompt = MESH_REF_TEMPLATE.format(subject=subject, pose=MESH_POSES.get(kind, ""))
         if on_stage:
             on_stage("reference")
         gerado = await _run(prompt, out_dir=directory, name=f"{stem}-ref", **kwargs)
@@ -1066,3 +1079,237 @@ async def sprite_3d(
     if gerado is not None:
         malha.source_image = referencia
     return malha
+
+
+# --- refino e render no Blender ---------------------------------------------
+
+#: Orçamento de faces por uso. Não são números redondos por gosto: 6 mil é o
+#: que um personagem de jogo indie carrega sem pensar, 20 mil é o que aguenta
+#: close-up, e 60 mil é para quem vai esculpir por cima.
+FACE_BUDGETS = {"game": 6000, "detail": 20000, "high": 60000}
+
+EXPORT_FORMATS = (".glb", ".gltf", ".fbx", ".obj", ".usdz", ".blend")
+
+
+@dataclass
+class Refined:
+    """A malha depois do Blender, e o que mudou nela."""
+
+    outputs: list[Path] = field(default_factory=list)
+    texture: Path | None = None
+    before: dict = field(default_factory=dict)
+    after: dict = field(default_factory=dict)
+    retopo: bool = False
+    uv_created: bool = False
+    renders: list[Path] = field(default_factory=list)
+
+    @property
+    def quad_ratio(self) -> float:
+        return float(self.after.get("quad_ratio", 0.0))
+
+
+def refine_mesh(
+    mesh_path: str | Path,
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    faces: int | str = "game",
+    retopo: bool = True,
+    texture_size: int = 1024,
+    formats: list[str] | None = None,
+    weld: bool = True,
+    smooth: bool = True,
+    unwrap: bool = True,
+    bake: bool = True,
+) -> Refined:
+    """Malha crua de IA → asset: quadriláteros, UV, textura e os formatos de saída.
+
+    O que um gerador 3D devolve não é asset. É uma casca de centenas de milhares
+    de triângulos irregulares, sem UV, com a cor guardada por vértice — que só o
+    visualizador dele entende. Abrir isso no Blender dá um borrão cinza, e pôr
+    num motor de jogo dá um objeto sem textura.
+
+    Esta função faz o que um artista faria, na mesma ordem: solda, retopologiza
+    em quadriláteros com QuadriFlow, desdobra a UV, e **assa a cor da malha
+    densa na topologia limpa** — a mesma transferência de alta para baixa que se
+    usa entre high-poly e low-poly.
+    """
+    from . import blender
+
+    origem = existing_path(mesh_path)
+    directory = Path(out_dir) if out_dir else default_out_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name or origem.stem)
+
+    alvo = FACE_BUDGETS.get(faces, faces) if isinstance(faces, str) else int(faces)
+    saidas = [directory / f"{stem}{ext}" for ext in (formats or [".glb"])]
+    textura = directory / f"{stem}-albedo.png"
+
+    resposta = blender.run("refine.py", {
+        "input": str(origem),
+        "faces": alvo,
+        "retopo": bool(retopo),
+        "texture_size": int(texture_size),
+        "texture_out": str(textura),
+        "outputs": [str(p) for p in saidas],
+        "weld": weld,
+        "smooth": smooth,
+        "unwrap": unwrap,
+        "bake": bake,
+    })
+    return Refined(
+        outputs=[Path(p) for p in resposta["outputs"]],
+        texture=Path(resposta["texture"]) if resposta.get("texture") else None,
+        before=resposta.get("before", {}),
+        after=resposta.get("after", {}),
+        retopo=bool(resposta.get("retopo")),
+        uv_created=bool(resposta.get("uv_created")),
+    )
+
+
+def render_mesh(
+    mesh_path: str | Path,
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    frames: int = 1,
+    size: int = 512,
+    pitch: float = 15.0,
+    start: float | None = None,
+    zoom: float = 0.9,
+    engine: str = "eevee",
+    samples: int = 64,
+    transparent: bool = True,
+    light: float = 1.0,
+    mesh_engine: str | None = None,
+    gif: bool = False,
+    fps: int = 12,
+) -> list[Path]:
+    """Render de verdade da malha, com luz de estúdio e material.
+
+    Diferente do `turntable`, que rasteriza pontos aqui mesmo em NumPy: aquele é
+    para sprite pequeno e roda em qualquer lugar; este é para mostrar o modelo
+    como ele é, com sombra projetada, oclusão e antialiasing de motor de render.
+    """
+    from . import blender, mesh3d
+
+    origem = existing_path(mesh_path)
+    directory = Path(out_dir) if out_dir else default_out_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name or origem.stem)
+    pasta = directory / f"{stem}-render"
+    pasta.mkdir(parents=True, exist_ok=True)
+    for antigo in pasta.glob("*.png"):
+        antigo.unlink()
+
+    if start is None:
+        motores = {m.name: m for m in mesh3d.ENGINES}
+        start = motores[mesh_engine].front_yaw if mesh_engine in motores else 0.0
+
+    resposta = blender.run("render.py", {
+        "input": str(origem),
+        "frames": int(frames),
+        "size": int(size),
+        "pitch": float(pitch),
+        "start": float(start),
+        "zoom": float(zoom),
+        "engine": engine,
+        "samples": int(samples),
+        "transparent": bool(transparent),
+        "light": float(light),
+        "out_pattern": str(pasta / f"{stem}-%02d.png"),
+    })
+    caminhos = [Path(p) for p in resposta["frames"]]
+    if gif and len(caminhos) > 1:
+        imaging.save_gif([imaging.open_image(p) for p in caminhos],
+                         directory / f"{stem}-render.gif", fps=fps)
+    return caminhos
+
+
+@dataclass
+class Model3D:
+    """Um asset 3D inteiro: a referência, a malha crua, o asset refinado e o retrato."""
+
+    reference: Path | None = None
+    raw_mesh: Path | None = None
+    engine: str = ""
+    engine_label: str = ""
+    license: str = ""
+    refined: Refined | None = None
+    renders: list[Path] = field(default_factory=list)
+    turntable: Path | None = None
+    prompt: str = ""
+
+
+async def model_3d(
+    subject: str,
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    engine: str | None = None,
+    faces: int | str = "game",
+    texture_size: int = 1024,
+    formats: list[str] | None = None,
+    retopo: bool = True,
+    render_frames: int = 4,
+    render_size: int = 640,
+    render_engine: str = "eevee",
+    samples: int = 64,
+    pitch: float = 15.0,
+    reference: str | Path | None = None,
+    kind: str = "auto",
+    on_stage=None,
+    **kwargs,
+) -> Model3D:
+    """Prompt → asset 3D pronto para o Blender. É o comando de cabeça do 3D.
+
+    Quatro passos, e cada um tem comando próprio porque cada um falha por um
+    motivo diferente: a referência sai errada (personagem cortado, dois
+    personagens), o motor 3D cai (Space público), o refino depende do Blender
+    estar instalado, e o render é gosto.
+    """
+    directory = Path(out_dir) if out_dir else default_out_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name or slugify(subject))
+
+    if reference:
+        referencia = existing_path(reference)
+    else:
+        if on_stage:
+            on_stage("reference")
+        prompt = MESH_REF_TEMPLATE.format(subject=subject, pose=MESH_POSES.get(kind, ""))
+        gerado = await _run(prompt, out_dir=directory, name=f"{stem}-ref", **kwargs)
+        referencia = gerado.paths[0]
+
+    crua = mesh_from_image(referencia, out_dir=directory, name=f"{stem}-raw",
+                           engine=engine, on_stage=on_stage)
+    if on_stage:
+        on_stage("refine")
+    refinada = refine_mesh(crua.path, out_dir=directory, name=stem, faces=faces, retopo=retopo,
+                           texture_size=texture_size, formats=formats or [".glb", ".fbx", ".blend"])
+
+    renders: list[Path] = []
+    if render_frames:
+        if on_stage:
+            on_stage("render")
+        renders = render_mesh(refinada.outputs[0], out_dir=directory, name=stem,
+                              frames=render_frames, size=render_size, pitch=pitch,
+                              engine=render_engine, samples=samples,
+                              mesh_engine=crua.engine)
+
+    resultado = Model3D(
+        reference=referencia, raw_mesh=crua.path, engine=crua.engine,
+        engine_label=crua.engine_label, license=crua.license, refined=refinada,
+        renders=renders, prompt=subject,
+    )
+    if renders:
+        folha = [imaging.open_image(p) for p in renders]
+        largura = sum(i.width for i in folha)
+        tira = imaging.Image.new("RGBA", (largura, folha[0].height), (0, 0, 0, 0))
+        deslocamento = 0
+        for imagem in folha:
+            tira.paste(imagem, (deslocamento, 0))
+            deslocamento += imagem.width
+        resultado.turntable = unique_path(directory, f"{stem}-render", ".png")
+        tira.save(resultado.turntable)
+    return resultado

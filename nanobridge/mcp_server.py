@@ -897,6 +897,162 @@ async def generate_sprite_3d(
     return _respond_mesh(resultado)
 
 
+def _respond_refined(result: core.Refined, renders=None) -> list[TextContent | ImageContent]:
+    resumo = {
+        "outputs": [str(p) for p in result.outputs],
+        "texture": str(result.texture) if result.texture else None,
+        "before": result.before,
+        "after": result.after,
+        "retopo": result.retopo,
+        "uv_created": result.uv_created,
+        "renders": [str(p) for p in (renders or [])],
+    }
+    if result.texture is None:
+        resumo["warning"] = t("refine.no_color")
+    saida: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(resumo, ensure_ascii=False))
+    ]
+    for caminho in (renders or [])[:4]:
+        saida.append(_preview(caminho))
+    return saida
+
+
+@mcp.tool()
+@handled
+def blender_status() -> str:
+    """Whether Blender is reachable, and where. Refining and rendering need it.
+
+    Blender is an external dependency on purpose: it is a 400MB download, and
+    nobody who only wants 2D sprites should be made to install it. Install with
+    `brew install --cask blender`, or point NANOBRIDGE_BLENDER at the binary.
+    """
+    from . import blender
+
+    return json.dumps({"found": blender.find_blender(), "version": blender.version()},
+                      ensure_ascii=False)
+
+
+@mcp.tool()
+@handled
+def refine_mesh(
+    mesh: str,
+    out_dir: str | None = None,
+    name: str | None = None,
+    faces: str = "game",
+    retopo: bool = True,
+    texture_size: int = 1024,
+    formats: list[str] | None = None,
+) -> list[TextContent | ImageContent]:
+    """Turn a raw AI mesh into an actual asset, in Blender. Needs Blender installed.
+
+    What a 3D generator returns is not an asset: a shell of hundreds of thousands
+    of irregular triangles, no UVs, colour stored per vertex — which only its own
+    viewer understands. Open that in Blender and you get a grey blob; drop it in
+    a game engine and it has no texture.
+
+    This does what an artist would, in the same order: weld, retopologise into
+    **quads** with QuadriFlow, UV unwrap, and bake the dense mesh's colour onto
+    the clean topology — the same high-to-low transfer used between a sculpt and
+    a game model. Then it exports .glb / .fbx / .obj / .usdz / .blend.
+
+    `faces` takes "game" (6k), "detail" (20k), "high" (60k) or a number as a
+    string. Check `after.quad_ratio` in the result: 1.0 means the retopology
+    landed; anything lower means it fell back to decimation, and the mesh is
+    still triangles.
+    """
+    resultado = core.refine_mesh(
+        mesh, out_dir=Path(out_dir) if out_dir else None, name=name, faces=faces,
+        retopo=retopo, texture_size=texture_size, formats=formats or [".glb"],
+    )
+    return _respond_refined(resultado)
+
+
+@mcp.tool()
+@handled
+def render_mesh(
+    mesh: str,
+    out_dir: str | None = None,
+    name: str | None = None,
+    frames: int = 1,
+    size: int = 640,
+    pitch: float = 15.0,
+    engine: str = "eevee",
+    samples: int = 64,
+    transparent: bool = True,
+    mesh_engine: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Render a mesh properly, in Blender: studio lighting, real materials, shadows.
+
+    Different from `render_turntable`, which rasterises points here in NumPy.
+    That one is for small sprites and runs anywhere. This one shows the model as
+    it is — cast shadow, occlusion, engine antialiasing — and is the image that
+    goes in a README, or the proof that the mesh survives a close look.
+
+    `engine` is "eevee" (seconds) or "cycles" (minutes, and better).
+    """
+    caminhos = core.render_mesh(
+        mesh, out_dir=Path(out_dir) if out_dir else None, name=name, frames=frames,
+        size=size, pitch=pitch, engine=engine, samples=samples, transparent=transparent,
+        mesh_engine=mesh_engine,
+    )
+    resumo = {"frames": [str(p) for p in caminhos]}
+    saida: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(resumo, ensure_ascii=False))
+    ]
+    for caminho in caminhos[:4]:
+        saida.append(_preview(caminho))
+    return saida
+
+
+@mcp.tool()
+@handled
+async def generate_model_3d(
+    subject: str,
+    out_dir: str | None = None,
+    name: str | None = None,
+    kind: str = "auto",
+    engine: str | None = None,
+    faces: str = "game",
+    texture_size: int = 1024,
+    formats: list[str] | None = None,
+    render_frames: int = 4,
+    render_size: int = 640,
+    render_engine: str = "eevee",
+    reference: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Prompt to a Blender-ready 3D asset, in one call. The flagship 3D tool.
+
+    Four models and programs in a row: Nano Banana draws a clean reference, a
+    single-image-to-3D model reconstructs geometry, Blender retopologises it into
+    quads with UVs and a baked texture, and Blender renders a preview. Each step
+    has its own tool, because each fails for a different reason.
+
+    **Set `kind`.** "character" asks for an A-pose and a full body; "prop" asks
+    for a three-quarter view with no face and no limbs. It matters: asking for a
+    body when the subject is an object gets you one — a treasure chest came back
+    with arms and legs on the first measured run.
+
+    Describe the physical thing, not the art: "a wooden treasure chest with iron
+    bands and a heavy padlock" works, "3D model of a chest asset" does not.
+    Needs Blender — check `blender_status` first.
+    """
+    resultado = await core.model_3d(
+        subject, out_dir=Path(out_dir) if out_dir else None, name=name, kind=kind,
+        engine=engine, faces=faces, texture_size=texture_size,
+        formats=formats or [".glb", ".fbx", ".blend"], render_frames=render_frames,
+        render_size=render_size, render_engine=render_engine, reference=reference,
+    )
+    saida = _respond_refined(resultado.refined, resultado.renders) if resultado.refined else []
+    if saida:
+        dados = json.loads(saida[0].text)
+        dados.update(reference=str(resultado.reference) if resultado.reference else None,
+                     raw_mesh=str(resultado.raw_mesh) if resultado.raw_mesh else None,
+                     engine=resultado.engine, engine_label=resultado.engine_label,
+                     license=resultado.license)
+        saida[0] = TextContent(type="text", text=json.dumps(dados, ensure_ascii=False))
+    return saida
+
+
 def run() -> None:
     config.apply_saved_language()
     mcp.run()

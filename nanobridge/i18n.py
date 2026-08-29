@@ -12,6 +12,35 @@ import os
 SUPPORTED = ("pt", "en")
 
 STRINGS: dict[str, dict[str, str]] = {
+    "model.stage_reference": {
+        "pt": "1/4 desenhando a referência no Nano Banana…",
+        "en": "1/4 drawing the reference in Nano Banana…",
+    },
+    "model.stage_refine": {
+        "pt": "3/4 refinando no Blender: quadriláteros, UV e textura…",
+        "en": "3/4 refining in Blender: quads, UV and texture…",
+    },
+    "model.stage_render": {"pt": "4/4 renderizando o retrato…", "en": "4/4 rendering the preview…"},
+    "blender.opening": {"pt": "abrindo {path} no Blender", "en": "opening {path} in Blender"},
+    # --- Blender
+    "err.blender_missing": {
+        "pt": "o Blender não está instalado — `brew install --cask blender`, ou aponte "
+              "NANOBRIDGE_BLENDER para o executável",
+        "en": "Blender is not installed — `brew install --cask blender`, or point "
+              "NANOBRIDGE_BLENDER at the executable",
+    },
+    "err.blender": {"pt": "o Blender recusou: {detail}", "en": "Blender refused: {detail}"},
+    "refine.done": {
+        "pt": "{before_faces} faces → {after_faces} ({quad_ratio:.0%} quadriláteros), "
+              "UV {uv}, textura {texture}",
+        "en": "{before_faces} faces → {after_faces} ({quad_ratio:.0%} quads), UV {uv}, texture {texture}",
+    },
+    "refine.uv_new": {"pt": "criada", "en": "created"},
+    "refine.uv_kept": {"pt": "a que já tinha", "en": "kept"},
+    "refine.no_color": {
+        "pt": "a malha não trazia cor nenhuma — saiu sem textura, só geometria",
+        "en": "the mesh carried no colour — it came out untextured, geometry only",
+    },
     # --- 3D (comandos)
     "mesh3d.stage_reference": {
         "pt": "1/3 desenhando a referência no Nano Banana…",

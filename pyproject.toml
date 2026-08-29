@@ -1,12 +1,12 @@
 [project]
 name = "nanobridge"
-version = "0.7.0"
-description = "Nano Banana image generation plus single-image-to-3D, wired into any agent as a CLI and an MCP server."
+version = "0.8.0"
+description = "Nano Banana image generation, single-image-to-3D, and a Blender refinement pipeline — as a CLI and an MCP server."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }
 authors = [{ name = "Miguel Moretti" }]
-keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites", "image-to-3d", "triposr"]
+keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites", "image-to-3d", "blender", "retopology"]
 
 dependencies = [
   # 2.0 mudou a forma de client.quotas e de start_chat; o codigo depende das duas.

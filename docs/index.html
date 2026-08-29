@@ -79,7 +79,7 @@
 <div class="wrap">
 
 <header>
-  <span class="badge">🍌 NanoBridge 0.7.0</span>
+  <span class="badge">🍌 NanoBridge 0.8.0</span>
   <h1><span lang="en">Nano Banana, wired into your agent.</span><span lang="pt">Nano Banana, ligado no seu agente.</span></h1>
   <p class="lede">
     <span lang="en">Gemini's image models as an <strong>MCP server</strong> and a <strong>CLI</strong> — spending the Gemini plan you already pay for, instead of billing per image.</span>
@@ -173,6 +173,37 @@
   <p>
     <span lang="en"><strong>The input picture decides everything:</strong> one object, whole, facing the camera, plain background, visible shading. Flat pixel art does not work — there is no volume in it to reconstruct. Measured on this project's own 32×32 hero sprite, the result came back 7% as deep as it was wide, so <code>mesh</code> prints a depth ratio and warns when it collapses.</span>
     <span lang="pt"><strong>A imagem de entrada decide tudo:</strong> um objeto só, inteiro, de frente, fundo liso, com sombreado visível. Arte 2D chapada não funciona — não há volume nenhum para reconstruir. Medido no sprite de 32×32 deste próprio projeto, o resultado voltou com 7% de profundidade, e por isso o <code>mesh</code> imprime a razão de profundidade e avisa quando ela desaba.</span>
+  </p>
+</section>
+
+<section id="asset">
+  <h2><span lang="en">A mesh is not an asset</span><span lang="pt">Malha não é asset</span></h2>
+  <p class="sub">
+    <span lang="en">The part that decides whether the 3D is usable — and the part everything else skips.</span>
+    <span lang="pt">A parte que decide se o 3D serve — e a parte que todo mundo pula.</span>
+  </p>
+  <div class="sheet">
+    <img src="assets/blender-render.png" alt="a treasure chest rendered from four angles in Blender">
+  </div>
+  <p>
+    <span lang="en">What a 3D generator returns is a <strong>shell</strong>: two to five hundred thousand irregular triangles, no UVs, colour stored per vertex — a format only its own viewer understands. Open it in Blender and you get a grey blob; drop it in Godot and it has no texture. It is a preview, not a model.</span>
+    <span lang="pt">O que um gerador 3D devolve é uma <strong>casca</strong>: duzentos a quinhentos mil triângulos irregulares, sem UV, com a cor guardada por vértice — formato que só o visualizador dele entende. Abre no Blender e dá um borrão cinza; põe no Godot e não tem textura. É prévia, não é modelo.</span>
+  </p>
+<pre><code>nanobridge model "a wooden treasure chest with iron bands and a heavy padlock" --kind prop</code></pre>
+  <p>
+    <span lang="en">The chest above is that command. In between, <code>refine</code> runs Blender headless and does what an artist would, in the same order: weld and fix normals, retopologise into <strong>quads</strong> with QuadriFlow, unwrap the UVs, and <strong>bake the dense mesh's colour onto the clean topology</strong> — the same high-to-low transfer used between a sculpt and a game model. 279 329 faces became 5 519, all quads.</span>
+    <span lang="pt">O baú acima é esse comando. No meio, o <code>refine</code> roda o Blender sem interface e faz o que um artista faria, na mesma ordem: solda e conserta normal, retopologiza em <strong>quadriláteros</strong> com QuadriFlow, desdobra a UV e <strong>assa a cor da malha densa na topologia limpa</strong> — a mesma transferência de alta para baixa que se usa entre escultura e modelo de jogo. 279 329 faces viraram 5 519, todas quadriláteras.</span>
+  </p>
+  <div class="sheet">
+    <img src="assets/blender-albedo.png" alt="the baked UV atlas: wood planks, iron bands, rivets">
+  </div>
+  <p>
+    <span lang="en">That atlas is the whole point. It came out of the mesh's own vertex colours, and unlike them it works in any engine, any viewer, any renderer. The <code>.blend</code> ships with the image packed inside, so it opens anywhere.</span>
+    <span lang="pt">Esse atlas é o ponto inteiro. Ele saiu da cor por vértice da própria malha, e diferente dela funciona em qualquer motor, visualizador ou render. O <code>.blend</code> sai com a imagem embutida, então abre em qualquer lugar.</span>
+  </p>
+  <p>
+    <span lang="en">Blender is an external dependency on purpose: it is a 400MB download, and nobody who only wants 2D sprites should be made to install it — <code>brew install --cask blender</code>.</span>
+    <span lang="pt">O Blender é dependência externa de propósito: são 400 MB, e quem só quer sprite 2D não deveria ser obrigado a baixar — <code>brew install --cask blender</code>.</span>
   </p>
 </section>
 

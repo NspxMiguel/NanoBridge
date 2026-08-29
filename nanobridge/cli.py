@@ -426,7 +426,8 @@ async def _cmd_sprite3d(args: argparse.Namespace) -> int:
         args.subject, engine=args.engine,
         frames=args.frames, size=args.size, pitch=args.pitch, zoom=args.zoom,
         gif=args.gif, fps=args.fps, pixels=args.pixels, palette=args.palette,
-        reference=args.reference, on_stage=_mesh_stage(args), **_gen_only_kwargs(args),
+        reference=args.reference, kind=args.kind, on_stage=_mesh_stage(args),
+        **_gen_only_kwargs(args),
     )
     if resultado.source_image:
         print(t("gen.saved", path=resultado.source_image))
@@ -440,6 +441,122 @@ async def _cmd_sprite3d(args: argparse.Namespace) -> int:
             print(t("gen.saved", path=extra))
     if args.open:
         _open_files([p for p in (resultado.sheet, resultado.path) if p])
+    return 0
+
+
+def _stage_3d(args):
+    """Diz em que passo está, em stderr — em pipe, a saída limpa importa."""
+    import sys
+
+    if getattr(args, "quiet", False):
+        return None
+
+    def contar(marca):
+        chaves = {"reference": "model.stage_reference", "refine": "model.stage_refine",
+                  "render": "model.stage_render"}
+        if isinstance(marca, str):
+            print(t(chaves.get(marca, "model.stage_reference")), file=sys.stderr)
+        else:
+            print(t("mesh3d.stage_engine", engine=marca.label), file=sys.stderr)
+
+    return contar
+
+
+def _relatar_refino(resultado) -> None:
+    antes, depois = resultado.before, resultado.after
+    print(t("refine.done",
+            before_faces=antes.get("faces", 0), after_faces=depois.get("faces", 0),
+            quad_ratio=resultado.quad_ratio,
+            uv=t("refine.uv_new") if resultado.uv_created else t("refine.uv_kept"),
+            texture=resultado.texture.name if resultado.texture else "—"))
+    if resultado.texture is None:
+        print(t("refine.no_color"))
+    for caminho in resultado.outputs:
+        print(t("gen.saved", path=caminho))
+    if resultado.texture:
+        print(t("gen.saved", path=resultado.texture))
+
+
+def _cmd_refine(args: argparse.Namespace) -> int:
+    """Malha crua → asset com topologia, UV e textura."""
+    resultado = core.refine_mesh(
+        args.mesh, out_dir=args.out, name=args.name, faces=args.faces,
+        retopo=not args.no_retopo, texture_size=args.texture_size,
+        formats=args.format or [".glb"], unwrap=not args.no_uv, bake=not args.no_bake,
+    )
+    _relatar_refino(resultado)
+    if args.open:
+        _open_files([resultado.outputs[0]])
+    return 0
+
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    """Render de verdade da malha, no Blender."""
+    caminhos = core.render_mesh(
+        args.mesh, out_dir=args.out, name=args.name, frames=args.frames, size=args.size,
+        pitch=args.pitch, start=args.start, zoom=args.zoom, engine=args.engine,
+        samples=args.samples, transparent=not args.opaque, light=args.light,
+        mesh_engine=args.mesh_engine, gif=args.gif, fps=args.fps,
+    )
+    for caminho in caminhos:
+        print(t("gen.saved", path=caminho))
+    if args.open:
+        _open_files(caminhos[:1])
+    return 0
+
+
+def _cmd_blender(args: argparse.Namespace) -> int:
+    """Abre a malha no Blender, na interface."""
+    import subprocess
+
+    from . import blender as ponte
+
+    binario = ponte.find_blender()
+    if not binario:
+        from .errors import BlenderMissingError
+
+        raise BlenderMissingError()
+    caminho = core.existing_path(args.mesh)
+    if caminho.suffix.lower() == ".blend":
+        subprocess.Popen([binario, str(caminho)])
+    else:
+        # Sem .blend, é preciso importar: o Blender não abre GLB pela linha de
+        # comando, e mandar `--python-expr` é o único jeito de fazer isso sem
+        # criar arquivo temporário.
+        importadores = {".glb": "bpy.ops.import_scene.gltf(filepath=%r)",
+                        ".gltf": "bpy.ops.import_scene.gltf(filepath=%r)",
+                        ".obj": "bpy.ops.wm.obj_import(filepath=%r)",
+                        ".ply": "bpy.ops.wm.ply_import(filepath=%r)",
+                        ".fbx": "bpy.ops.import_scene.fbx(filepath=%r)"}
+        chamada = importadores.get(caminho.suffix.lower())
+        if not chamada:
+            raise SystemExit(f"o Blender não importa {caminho.suffix} por aqui")
+        subprocess.Popen([binario, "--python-expr",
+                          "import bpy; bpy.ops.wm.read_homefile(use_empty=True); " + chamada % str(caminho)])
+    print(t("blender.opening", path=caminho))
+    return 0
+
+
+async def _cmd_model(args: argparse.Namespace) -> int:
+    """Prompt → asset 3D pronto para o Blender."""
+    resultado = await core.model_3d(
+        args.subject, engine=args.engine, faces=args.faces, texture_size=args.texture_size,
+        formats=args.format or [".glb", ".fbx", ".blend"], retopo=not args.no_retopo,
+        render_frames=args.frames, render_size=args.render_size, render_engine=args.engine_render,
+        samples=args.samples, pitch=args.pitch, reference=args.reference, kind=args.kind,
+        on_stage=_stage_3d(args), **_gen_only_kwargs(args),
+    )
+    if resultado.reference:
+        print(t("gen.saved", path=resultado.reference))
+    print(t("mesh3d.made_by", engine=resultado.engine_label, license=resultado.license))
+    if resultado.refined:
+        _relatar_refino(resultado.refined)
+    for caminho in resultado.renders:
+        print(t("gen.saved", path=caminho))
+    if resultado.turntable:
+        print(t("gen.saved", path=resultado.turntable))
+    if args.open:
+        _open_files([p for p in (resultado.turntable, *resultado.refined.outputs) if p][:2])
     return 0
 
 
@@ -796,10 +913,77 @@ def build_parser() -> argparse.ArgumentParser:
     sprite3d.add_argument("--engine", help="triposr | hunyuan")
     sprite3d.add_argument("--reference",
                           help="pular a geração e usar esta imagem / skip generation, use this image")
+    sprite3d.add_argument("--kind", choices=("auto", "character", "prop"), default="auto",
+                         help="o que é o assunto: personagem pede pose, objeto não")
     sprite3d.add_argument("--quiet", action="store_true")
     _turntable_flags(sprite3d)
     _common(sprite3d, post=False)
     sprite3d.set_defaults(func=_cmd_sprite3d, is_async=True)
+
+    def _faces(valor: str):
+        return valor if valor in core.FACE_BUDGETS else int(valor)
+
+    refine = sub.add_parser(
+        "refine", help="malha crua → asset com quads, UV e textura / raw mesh → a real asset"
+    )
+    refine.add_argument("mesh")
+    refine.add_argument("--faces", type=_faces, default="game",
+                        help="game | detail | high, ou um número / or a number")
+    refine.add_argument("--no-retopo", action="store_true",
+                        help="reduzir em vez de refazer em quadriláteros")
+    refine.add_argument("--texture-size", type=int, default=1024)
+    refine.add_argument("-f", "--format", action="append",
+                        help=".glb .fbx .obj .usdz .blend (repetível)")
+    refine.add_argument("--no-uv", action="store_true")
+    refine.add_argument("--no-bake", action="store_true")
+    refine.add_argument("-o", "--out", type=Path)
+    refine.add_argument("-n", "--name")
+    refine.add_argument("--open", action="store_true")
+    refine.set_defaults(func=_cmd_refine, is_async=False)
+
+    render = sub.add_parser("render", help="render de verdade no Blender / a real Blender render")
+    render.add_argument("mesh")
+    render.add_argument("--frames", type=int, default=1)
+    render.add_argument("--size", type=int, default=640)
+    render.add_argument("--pitch", type=float, default=core.DEFAULT_PITCH)
+    render.add_argument("--start", type=float)
+    render.add_argument("--zoom", type=float, default=0.9)
+    render.add_argument("--engine", choices=("eevee", "cycles"), default="eevee")
+    render.add_argument("--samples", type=int, default=64)
+    render.add_argument("--light", type=float, default=1.0)
+    render.add_argument("--opaque", action="store_true", help="fundo sólido em vez de transparente")
+    render.add_argument("--mesh-engine", help="de qual motor a malha veio, para alinhar a frente")
+    render.add_argument("--gif", action="store_true")
+    render.add_argument("--fps", type=int, default=12)
+    render.add_argument("-o", "--out", type=Path)
+    render.add_argument("-n", "--name")
+    render.add_argument("--open", action="store_true")
+    render.set_defaults(func=_cmd_render, is_async=False)
+
+    abrir = sub.add_parser("blender", help="abrir a malha no Blender / open the mesh in Blender")
+    abrir.add_argument("mesh")
+    abrir.set_defaults(func=_cmd_blender, is_async=False)
+
+    model = sub.add_parser(
+        "model", help="prompt → asset 3D pronto pro Blender / prompt → a Blender-ready 3D asset"
+    )
+    model.add_argument("subject")
+    model.add_argument("--engine", help="motor 3D / 3D engine")
+    model.add_argument("--faces", type=_faces, default="game")
+    model.add_argument("--texture-size", type=int, default=1024)
+    model.add_argument("-f", "--format", action="append")
+    model.add_argument("--no-retopo", action="store_true")
+    model.add_argument("--frames", type=int, default=4, help="quadros do retrato / preview frames")
+    model.add_argument("--render-size", type=int, default=640)
+    model.add_argument("--engine-render", choices=("eevee", "cycles"), default="eevee")
+    model.add_argument("--samples", type=int, default=64)
+    model.add_argument("--pitch", type=float, default=core.DEFAULT_PITCH)
+    model.add_argument("--reference", help="pular a geração e usar esta imagem")
+    model.add_argument("--kind", choices=("auto", "character", "prop"), default="auto",
+                         help="o que é o assunto: personagem pede pose, objeto não")
+    model.add_argument("--quiet", action="store_true")
+    _common(model, post=False)
+    model.set_defaults(func=_cmd_model, is_async=True)
 
     tile = sub.add_parser(
         "tile", help="medir/consertar a emenda / measure or repair a seam"

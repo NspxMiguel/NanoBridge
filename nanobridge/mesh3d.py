@@ -15,6 +15,7 @@ chave e sem conta; o preço é a fila, e por isso existe mais de um na lista.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import time
@@ -43,6 +44,9 @@ class Engine:
     front_yaw: float = 180.0
     colored: bool = True
     license: str = ""
+    #: Roda em ZeroGPU. Anônimo recebe zero segundo de cota, então sem token
+    #: este motor nunca responde — e é melhor pular do que gastar a viagem.
+    needs_token: bool = False
 
     def call(self, client, image: str):  # pragma: no cover - cada motor difere
         raise NotImplementedError
@@ -79,11 +83,52 @@ class Hunyuan(Engine):
         )
 
 
+@dataclass(frozen=True)
+class Trellis(Engine):
+    def call(self, client, image: str):
+        from gradio_client import handle_file
+
+        # A sessão é obrigatória: sem ela o Space responde com o estado de outra
+        # pessoa, ou com nenhum.
+        with contextlib.suppress(Exception):
+            client.predict(api_name="/start_session")
+        return client.predict(
+            image=handle_file(image), multiimages=[], seed=0,
+            ss_guidance_strength=7.5, ss_sampling_steps=12,
+            slat_guidance_strength=3.0, slat_sampling_steps=12,
+            multiimage_algo="stochastic", mesh_simplify=0.95, texture_size=1024,
+            api_name=self.endpoint,
+        )
+
+
+@dataclass(frozen=True)
+class Hi3DGen(Engine):
+    def call(self, client, image: str):
+        from gradio_client import handle_file
+
+        preparada = client.predict(image=handle_file(image), api_name="/preprocess_image")
+        alvo = preparada if isinstance(preparada, str) else image
+        return client.predict(
+            image=handle_file(alvo), seed=0, ss_guidance_strength=3, ss_sampling_steps=50,
+            slat_guidance_strength=3.0, slat_sampling_steps=6, api_name=self.endpoint,
+        )
+
+
 #: Ordem de preferência. O TripoSR vem primeiro porque devolve **cor por
 #: vértice** — um sprite precisa da cor, e a malha branca do Hunyuan exige
 #: pintar depois. O Hunyuan fica como segunda opção porque a geometria dele é
 #: melhor, e às vezes é isso que se quer.
 ENGINES: tuple[Engine, ...] = (
+    Hunyuan(
+        name="hunyuan21",
+        label="Hunyuan3D-2.1 (Tencent)",
+        space="tencent/Hunyuan3D-2.1",
+        endpoint="/shape_generation",
+        front_yaw=0.0,
+        colored=False,
+        license="Tencent Hunyuan Community",
+        needs_token=False,
+    ),
     TripoSR(
         name="triposr",
         label="TripoSR (Stability AI + Tripo)",
@@ -102,12 +147,35 @@ ENGINES: tuple[Engine, ...] = (
         colored=False,
         license="Tencent Hunyuan Community",
     ),
+    Trellis(
+        name="trellis",
+        label="TRELLIS (Microsoft)",
+        space="trellis-community/TRELLIS",
+        endpoint="/generate_and_extract_glb",
+        front_yaw=180.0,
+        colored=True,
+        license="MIT",
+        needs_token=True,
+    ),
+    Hi3DGen(
+        name="hi3dgen",
+        label="Hi3DGen (Stable-X)",
+        space="Stable-X/Hi3DGen",
+        endpoint="/generate_3d",
+        front_yaw=180.0,
+        colored=False,
+        license="MIT",
+        needs_token=True,
+    ),
 )
 
 
 def find(name: str | None) -> list[Engine]:
     if not name:
-        return list(ENGINES)
+        # Sem token, os de ZeroGPU só devolveriam "cota esgotada" depois de uma
+        # viagem inteira. Pular é mais honesto e mais rápido.
+        tem_token = hf_token() is not None
+        return [e for e in ENGINES if tem_token or not e.needs_token]
     achados = [e for e in ENGINES if e.name == name]
     if not achados:
         conhecidos = ", ".join(e.name for e in ENGINES)
@@ -115,12 +183,30 @@ def find(name: str | None) -> list[Engine]:
     return achados
 
 
+def hf_token() -> str | None:
+    """Token da Hugging Face, se houver. Ele não é obrigatório — os motores
+    padrão respondem sem conta nenhuma — mas os melhores rodam em ZeroGPU, e
+    ZeroGPU dá **zero segundo** para quem chega anônimo. Com um token de conta
+    gratuita eles passam a responder."""
+    for chave in ("NANOBRIDGE_HF_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        valor = os.environ.get(chave)
+        if valor:
+            return valor.strip()
+    caminho = Path.home() / ".cache/huggingface/token"
+    if caminho.exists():
+        conteudo = caminho.read_text().strip()
+        if conteudo:
+            return conteudo
+    return None
+
+
 def _client(space: str):
     try:
         from gradio_client import Client
     except ImportError as exc:
         raise Mesh3DUnavailableError("gradio_client") from exc
-    return Client(space, verbose=False)
+    token = hf_token()
+    return Client(space, verbose=False, hf_token=token) if token else Client(space, verbose=False)
 
 
 def _collect(resposta) -> list[str]:
