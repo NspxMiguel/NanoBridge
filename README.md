@@ -249,6 +249,15 @@ four-colour pixel art.
 | image → mesh | [TripoSR](https://huggingface.co/spaces/stabilityai/TripoSR) (MIT) or [Hunyuan3D-2](https://huggingface.co/spaces/tencent/Hunyuan3D-2) | free public Space — you pay in queueing |
 | mesh → frames | a software rasteriser in this repo | local, no GPU, no network |
 
+The two engines are not interchangeable, and `--engine` picks between them:
+
+- **TripoSR** is the default because it returns **vertex colours** — a sprite
+  needs the colour, and it arrives already painted.
+- **Hunyuan3D-2** reconstructs better geometry (measured on the same reference:
+  989 448 faces against 285 267, with cleaner feet and cap spots) but hands back
+  an **unpainted mesh**. Reach for it when the shape matters more than the paint,
+  or when TripoSR is queueing.
+
 The rasteriser is NumPy, not OpenGL. That is deliberate: a pre-rendered sprite is
 a small image, and the output has to be **identical on every machine**, including
 inside a test and inside an MCP server with no display. Same `.glb` in, same

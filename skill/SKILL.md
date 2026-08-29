@@ -86,7 +86,10 @@ Two things that make the output usable, and are easy to miss:
 
 The mesh engines are free public Spaces, so they queue and sometimes fall over;
 NanoBridge walks the list rather than failing on the first. `list_mesh_engines`
-says who is in it and what each returns.
+says who is in it and what each returns. Two are wired in, and they differ in one
+way that matters: **TripoSR** (the default) returns a painted mesh, while
+**Hunyuan3D-2** returns better geometry with no colour at all. Do not reach for
+Hunyuan on a character sprite unless the shape is what is wrong.
 
 ## Doing it
 
