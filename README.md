@@ -2,12 +2,14 @@
 
 # NanoBridge
 
-**Gemini's Nano Banana image generation, wired into agents as an MCP server and a CLI**
-— using the Gemini plan the account already has, not a per-image bill.
+**Nano Banana image generation *and* single-image-to-3D, wired into agents as an
+MCP server and a CLI** — using the Gemini plan the account already has, not a
+per-image bill.
 
 [![tests](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml/badge.svg)](https://github.com/NspxMiguel/NanoBridge/actions/workflows/tests.yml)
 [![MCP](https://img.shields.io/badge/MCP-server_included-8a63d2)](#use-it-from-an-agent)
 [![Cost](https://img.shields.io/badge/cost-your_existing_Gemini_plan-3fb950)](#why-not-just-call-the-api)
+[![3D](https://img.shields.io/badge/3D-image_to_mesh-f0883e)](#the-second-model-3d)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)](#install)
 [![License](https://img.shields.io/github/license/NspxMiguel/NanoBridge?color=lightgrey)](LICENSE)
 
@@ -203,6 +205,68 @@ them": one sheet plus a JSON manifest of where each named sprite sits — what
 Godot, Phaser and Unity call a sprite atlas. `--dir` packs a whole folder
 instead of naming files one by one.
 
+## The second model: 3D
+
+Nano Banana draws pixels. It does not return geometry, and no prompt will make
+it — anything claiming otherwise about an image model is selling something.
+
+So the 3D comes from a different family of model entirely: **single-image-to-3D**
+reconstruction, which looks at one picture and returns a closed mesh. The two fit
+together well, because each solves the other's problem — those models need a
+clean, centred, plainly-lit reference, which is exactly what Nano Banana can be
+asked for.
+
+```bash
+nanobridge sprite3d "a round brown mushroom enemy with big angry eyes and small feet" --gif
+```
+
+<p align="center">
+  <img src="assets/turntable.png" width="640" alt="the same mushroom rendered from eight directions">
+</p>
+
+Three models in a row, and each step is its own command, because the reference is
+the step that goes wrong and redoing only that one is far cheaper than redoing the
+chain:
+
+```bash
+nanobridge gen "3D render of a wooden treasure chest, ..." -o work/   # 1. the reference
+nanobridge mesh work/chest.jpg --name chest                          # 2. the mesh (.glb)
+nanobridge turntable chest.glb --frames 8 --pitch 30 --gif           # 3. the sprite
+```
+
+`turntable` is where the 3D becomes useful in a 2D game: eight frames 45° apart,
+**all framed at one scale**, so the character does not swell and shrink as it
+turns. `--pitch 0` is a side-on platformer view, `--pitch 30` is proper isometric.
+The frames come out as ordinary PNGs, so `atlas`, `palette` and `slice` all work
+on them afterwards — `--palette gameboy --pixels 48` gives you a mesh rendered as
+four-colour pixel art.
+
+### What is honestly 3D here, and what is not
+
+| Step | Who does it | Cost |
+| --- | --- | --- |
+| the reference picture | Nano Banana, through the Gemini plan | plan credits |
+| image → mesh | [TripoSR](https://huggingface.co/spaces/stabilityai/TripoSR) (MIT) or [Hunyuan3D-2](https://huggingface.co/spaces/tencent/Hunyuan3D-2) | free public Space — you pay in queueing |
+| mesh → frames | a software rasteriser in this repo | local, no GPU, no network |
+
+The rasteriser is NumPy, not OpenGL. That is deliberate: a pre-rendered sprite is
+a small image, and the output has to be **identical on every machine**, including
+inside a test and inside an MCP server with no display. Same `.glb` in, same
+pixels out.
+
+**The input picture decides everything.** It needs one object, whole, facing the
+camera, on a plain background, with visible shading. Flat pixel art does not work
+— there is no volume in it to reconstruct. Measured on this repo's own 32×32 hero
+sprite, TripoSR returned a slab 7% as deep as it was wide. `mesh` prints a
+`depth_ratio` for exactly this reason, and warns below 0.1.
+
+3D needs its extras, because nobody who only wants 2D sprites should be made to
+download NumPy and trimesh:
+
+```bash
+pip install 'nanobridge[3d]'
+```
+
 ## Use it from an agent
 
 The MCP server exposes `generate_cast`, `generate_sprite`, `animate_sprite`,
@@ -210,7 +274,8 @@ The MCP server exposes `generate_cast`, `generate_sprite`, `animate_sprite`,
 `generate_image`, `generate_icon`, `edit_image`, `cut_image`, `slice_sheet`,
 `pack_atlas`, `build_normal_map`, `check_tileable`, `repair_tileable`,
 `list_atlas_formats`, `list_palettes`, `extract_palette`, `apply_palette`,
-`nanobridge_status` and `nanobridge_reset`.
+`nanobridge_status` and `nanobridge_reset` — plus `generate_sprite_3d`,
+`generate_mesh`, `render_turntable` and `list_mesh_engines` for the 3D half.
 
 `generate_cast` is the one to reach for when the task is "a set of characters"
 rather than one image — it is the whole coherence story in a single call.
@@ -256,6 +321,9 @@ for one run.
 - It talks to an interface Google does not document, so a change on their side can
   break it. The `api` backend is the fallback that stays put.
 - Generated images carry Google's SynthID watermark.
+- The 3D engines are public Hugging Face Spaces: no key and no account, but they
+  queue, restart, and occasionally go down. NanoBridge walks the list rather than
+  failing on the first one, and `list_mesh_engines` says who is in it.
 
 ## Getting good output
 

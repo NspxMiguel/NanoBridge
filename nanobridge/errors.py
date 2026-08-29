@@ -49,3 +49,29 @@ class WebQuotaError(NanoBridgeError):
 
     def __init__(self) -> None:
         super().__init__(t("err.quota_web"))
+
+
+class Mesh3DUnavailableError(NanoBridgeError):
+    """Falta a dependência opcional de 3D. Ela é opcional de propósito: quem só
+    quer sprite 2D não deve ser obrigado a baixar NumPy, trimesh e afins."""
+
+    def __init__(self, missing: str = "") -> None:
+        super().__init__(t("err.mesh_deps", missing=missing or "trimesh"))
+
+
+class EmptyMeshError(NanoBridgeError):
+    def __init__(self, path: str = "") -> None:
+        super().__init__(t("err.mesh_empty", path=path))
+
+
+class MeshBackendError(NanoBridgeError):
+    """O gerador 3D recusou. Diferente do canal de imagem, aqui existe uma fila
+    pública do outro lado: dizer qual motor falhou é o que permite trocar."""
+
+    def __init__(self, engine: str, detail: str) -> None:
+        super().__init__(t("err.mesh_backend", engine=engine, detail=detail))
+
+
+class NoMeshEngineError(NanoBridgeError):
+    def __init__(self) -> None:
+        super().__init__(t("err.mesh_no_engine"))

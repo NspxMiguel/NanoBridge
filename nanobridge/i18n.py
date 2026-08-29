@@ -12,6 +12,47 @@ import os
 SUPPORTED = ("pt", "en")
 
 STRINGS: dict[str, dict[str, str]] = {
+    # --- 3D (comandos)
+    "mesh3d.stage_reference": {
+        "pt": "1/3 desenhando a referência no Nano Banana…",
+        "en": "1/3 drawing the reference in Nano Banana…",
+    },
+    "mesh3d.stage_engine": {
+        "pt": "2/3 reconstruindo em 3D com {engine}…",
+        "en": "2/3 reconstructing in 3D with {engine}…",
+    },
+    "mesh3d.made_by": {
+        "pt": "malha feita por {engine} — licença {license}",
+        "en": "mesh made by {engine} — {license} licence",
+    },
+    "mesh3d.stats": {
+        "pt": "{vertices} vértices, {faces} faces, proporção de profundidade {depth_ratio}",
+        "en": "{vertices} vertices, {faces} faces, depth ratio {depth_ratio}",
+    },
+    "mesh3d.flat_warning": {
+        "pt": "aviso: quase sem profundidade — a referência provavelmente era arte 2D chapada; "
+              "peça um render 3D de um objeto só, de frente, em fundo liso",
+        "en": "warning: almost no depth — the reference was probably flat 2D art; "
+              "ask for a 3D render of a single object, facing the camera, on a plain background",
+    },
+    "mesh3d.engines": {"pt": "motores 3D", "en": "3D engines"},
+    # --- 3D (malha e render)
+    "err.mesh_deps": {
+        "pt": "falta a parte 3D: instale com  pip install 'nanobridge[3d]'  (faltou {missing})",
+        "en": "3D support is missing: install it with  pip install 'nanobridge[3d]'  (missing {missing})",
+    },
+    "err.mesh_empty": {
+        "pt": "a malha em {path} não tem face nenhuma",
+        "en": "the mesh at {path} has no faces",
+    },
+    "err.mesh_backend": {
+        "pt": "o motor 3D {engine} recusou: {detail}",
+        "en": "the 3D engine {engine} refused: {detail}",
+    },
+    "err.mesh_no_engine": {
+        "pt": "nenhum motor 3D respondeu — todos os espaços públicos estão fora do ar agora",
+        "en": "no 3D engine answered — every public space is down right now",
+    },
     # --- doctor / backends
     "doctor.title": {
         "pt": "NanoBridge — diagnóstico",

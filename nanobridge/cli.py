@@ -361,6 +361,88 @@ def _cmd_normal(args: argparse.Namespace) -> int:
     return 0
 
 
+def _gen_only_kwargs(args: argparse.Namespace) -> dict:
+    """Só o que a geração da referência entende.
+
+    `_run_kwargs` não serve aqui: ele carrega `size`, `pixels` e `palette`, que
+    no 3D pertencem ao **render** da malha e não à imagem de referência — e a
+    referência quer justamente o oposto (grande, colorida, sem paleta travada).
+    """
+    kwargs = {"out_dir": args.out, "backend_name": args.backend, "model": args.model,
+              "name": getattr(args, "name", None)}
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
+def _mesh_stage(args):
+    """Diz em que passo está. Vai para stderr: em pipe, a saída limpa importa."""
+    import sys
+
+    def contar(marca):
+        if marca == "reference":
+            print(t("mesh3d.stage_reference"), file=sys.stderr)
+        else:
+            print(t("mesh3d.stage_engine", engine=marca.label), file=sys.stderr)
+
+    return None if getattr(args, "quiet", False) else contar
+
+
+def _cmd_mesh(args: argparse.Namespace) -> int:
+    """Imagem → malha 3D."""
+    resultado = core.mesh_from_image(
+        args.image, out_dir=args.out, name=args.name, engine=args.engine,
+        on_stage=_mesh_stage(args),
+    )
+    print(t("gen.saved", path=resultado.path))
+    print(t("mesh3d.made_by", engine=resultado.engine_label, license=resultado.license))
+    print(t("mesh3d.stats", **resultado.stats))
+    if resultado.stats["depth_ratio"] < 0.10:
+        print(t("mesh3d.flat_warning"))
+    if args.open:
+        _open_files([resultado.path])
+    return 0
+
+
+def _cmd_turntable(args: argparse.Namespace) -> int:
+    """Malha → as N direções, já como sprite 2D."""
+    resultado = core.render_turntable(
+        args.mesh, out_dir=args.out, name=args.name, frames=args.frames, size=args.size,
+        pitch=args.pitch, start=args.start, zoom=args.zoom, engine=args.engine,
+        sheet=not args.no_sheet, gif=args.gif, fps=args.fps, pixels=args.pixels,
+        palette=args.palette,
+    )
+    for caminho in resultado.frames:
+        print(t("gen.saved", path=caminho))
+    for extra in (resultado.sheet, resultado.gif):
+        if extra:
+            print(t("gen.saved", path=extra))
+    if args.open:
+        _open_files([resultado.sheet or resultado.frames[0]])
+    return 0
+
+
+async def _cmd_sprite3d(args: argparse.Namespace) -> int:
+    """Prompt → referência → malha → folha de direções, de uma vez."""
+    resultado = await core.sprite_3d(
+        args.subject, engine=args.engine,
+        frames=args.frames, size=args.size, pitch=args.pitch, zoom=args.zoom,
+        gif=args.gif, fps=args.fps, pixels=args.pixels, palette=args.palette,
+        reference=args.reference, on_stage=_mesh_stage(args), **_gen_only_kwargs(args),
+    )
+    if resultado.source_image:
+        print(t("gen.saved", path=resultado.source_image))
+    print(t("gen.saved", path=resultado.path))
+    print(t("mesh3d.made_by", engine=resultado.engine_label, license=resultado.license))
+    print(t("mesh3d.stats", **resultado.stats))
+    for caminho in resultado.frames:
+        print(t("gen.saved", path=caminho))
+    for extra in (resultado.sheet, resultado.gif):
+        if extra:
+            print(t("gen.saved", path=extra))
+    if args.open:
+        _open_files([p for p in (resultado.sheet, resultado.path) if p])
+    return 0
+
+
 def _cmd_tile(args: argparse.Namespace) -> int:
     """Medir, consertar e pré-visualizar a emenda de uma imagem local."""
     if args.repair:
@@ -670,6 +752,54 @@ def build_parser() -> argparse.ArgumentParser:
     normal.add_argument("--strength", type=float, default=2.0)
     normal.add_argument("--blur", type=float, default=1.0)
     normal.set_defaults(func=_cmd_normal, is_async=False)
+
+    def _turntable_flags(parser_):
+        parser_.add_argument("--frames", type=int, default=8,
+                             help="quantas direções / how many directions")
+        parser_.add_argument("--size", type=int, default=192)
+        parser_.add_argument("--pitch", type=float, default=core.DEFAULT_PITCH,
+                             help="inclinação da câmera; 30 = isométrica / camera tilt; 30 = isometric")
+        parser_.add_argument("--zoom", type=float, default=0.92)
+        parser_.add_argument("--gif", action="store_true")
+        parser_.add_argument("--fps", type=int, default=12)
+        parser_.add_argument("--pixels", type=int,
+                             help="reduzir a uma grade de N pixels / crush to an N-pixel grid")
+        parser_.add_argument("--palette",
+                             help="nome de paleta ou lista de cores / palette name or colour list")
+
+    mesh = sub.add_parser("mesh", help="imagem → malha 3D / image → 3D mesh")
+    mesh.add_argument("image")
+    mesh.add_argument("--engine", help="triposr | hunyuan")
+    mesh.add_argument("-o", "--out", type=Path, help="pasta de saída / output folder")
+    mesh.add_argument("-n", "--name")
+    mesh.add_argument("--open", action="store_true")
+    mesh.add_argument("--quiet", action="store_true")
+    mesh.set_defaults(func=_cmd_mesh, is_async=False)
+
+    turntable = sub.add_parser(
+        "turntable", help="malha → sprite das N direções / mesh → an N-direction sprite"
+    )
+    turntable.add_argument("mesh")
+    turntable.add_argument("--engine", help="de qual motor veio, para alinhar a frente")
+    turntable.add_argument("--start", type=float, help="ângulo do primeiro quadro / yaw of frame 1")
+    turntable.add_argument("--no-sheet", action="store_true")
+    turntable.add_argument("-o", "--out", type=Path, help="pasta de saída / output folder")
+    turntable.add_argument("-n", "--name")
+    turntable.add_argument("--open", action="store_true")
+    _turntable_flags(turntable)
+    turntable.set_defaults(func=_cmd_turntable, is_async=False)
+
+    sprite3d = sub.add_parser(
+        "sprite3d", help="prompt → malha → sprite das N direções / prompt → mesh → N-direction sprite"
+    )
+    sprite3d.add_argument("subject")
+    sprite3d.add_argument("--engine", help="triposr | hunyuan")
+    sprite3d.add_argument("--reference",
+                          help="pular a geração e usar esta imagem / skip generation, use this image")
+    sprite3d.add_argument("--quiet", action="store_true")
+    _turntable_flags(sprite3d)
+    _common(sprite3d, post=False)
+    sprite3d.set_defaults(func=_cmd_sprite3d, is_async=True)
 
     tile = sub.add_parser(
         "tile", help="medir/consertar a emenda / measure or repair a seam"

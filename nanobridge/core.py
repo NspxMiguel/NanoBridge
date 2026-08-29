@@ -853,3 +853,216 @@ def build_normal_map(
     target.parent.mkdir(parents=True, exist_ok=True)
     result.save(target)
     return target
+
+
+# --- 3D --------------------------------------------------------------------
+#
+# O molde de referência é escrito com cuidado porque a reconstrução 3D é bem
+# mais exigente que o desenho: ela quer UM objeto, inteiro, de frente, sobre
+# fundo liso. Pedir "pixel art" aqui é o erro clássico — medido nesta base, um
+# sprite de 32×32 vira uma placa de 7% de profundidade, porque não há volume
+# nenhum na imagem para o modelo reconstruir.
+MESH_REF_TEMPLATE = (
+    "3D render of {subject}, single character centered in frame, "
+    "full body visible from head to feet, standing in a neutral A-pose facing the camera, "
+    "soft even studio lighting, matte clay-like shading, no harsh shadows, "
+    "plain flat white background, no floor, no props, no text"
+)
+
+#: Inclinação padrão da câmera na volta. 0° é a vista lateral pura dos jogos de
+#: plataforma; 30° é a isométrica clássica. 15° é o meio-termo que mostra o topo
+#: do ombro sem achatar a silhueta.
+DEFAULT_PITCH = 15.0
+
+
+@dataclass
+class Mesh3D:
+    """Uma malha gerada, e o rastro de como ela chegou aqui."""
+
+    path: Path
+    engine: str = ""
+    engine_label: str = ""
+    license: str = ""
+    source_image: Path | None = None
+    frames: list[Path] = field(default_factory=list)
+    sheet: Path | None = None
+    gif: Path | None = None
+    prompt: str = ""
+    stats: dict = field(default_factory=dict)
+
+
+def mesh_from_image(
+    image: str | Path,
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    engine: str | None = None,
+    on_stage=None,
+) -> Mesh3D:
+    """Imagem → malha 3D, no disco."""
+    from . import mesh3d
+
+    source = existing_path(image)
+    directory = Path(out_dir) if out_dir else default_out_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name or source.stem)
+    destino = unique_path(directory, stem, ".glb")
+
+    caminho, motor = mesh3d.to_mesh(source, destino, engine=engine, on_stage=on_stage)
+    return Mesh3D(
+        path=caminho,
+        engine=motor.name,
+        engine_label=motor.label,
+        license=motor.license,
+        source_image=source,
+        stats=mesh_stats(caminho),
+    )
+
+
+def mesh_stats(path: str | Path) -> dict:
+    """Números que provam que é geometria, e não imagem com nome de malha."""
+    from . import render3d
+
+    malha = render3d.load_mesh(path)
+    limites = malha.bounds
+    tamanho = (limites[1] - limites[0]).tolist()
+    maior = max(tamanho) or 1.0
+    return {
+        "vertices": len(malha.vertices),
+        "faces": len(malha.faces),
+        "size": [round(float(v), 4) for v in tamanho],
+        # A razão entre o menor e o maior eixo é o que separa objeto de placa:
+        # abaixo de ~0.1 o modelo devolveu um relevo, não um volume.
+        "depth_ratio": round(float(min(tamanho) / maior), 3),
+        "watertight": bool(malha.is_watertight),
+    }
+
+
+def render_turntable(
+    mesh_path: str | Path,
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    frames: int = 8,
+    size: int = 192,
+    pitch: float = DEFAULT_PITCH,
+    start: float | None = None,
+    zoom: float = 0.92,
+    engine: str | None = None,
+    sheet: bool = True,
+    gif: bool = False,
+    fps: int = 12,
+    pixels: int | None = None,
+    palette: str | None = None,
+) -> Mesh3D:
+    """Malha → as N direções, como PNGs soltos, folha e (opcional) GIF.
+
+    Este é o comando que fecha o ciclo: o que sai daqui volta a ser sprite 2D e
+    entra nos comandos que já existiam — `atlas`, `palette`, `slice`.
+    """
+    from . import mesh3d, render3d
+
+    origem = existing_path(mesh_path)
+    directory = Path(out_dir) if out_dir else default_out_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name or origem.stem)
+
+    if start is None:
+        # Sem ângulo pedido, alinhar pela convenção do motor: o quadro 1 tem que
+        # ser a frente do personagem, senão a folha começa pelas costas.
+        motores = {m.name: m for m in mesh3d.ENGINES}
+        start = motores[engine].front_yaw if engine in motores else mesh3d.ENGINES[0].front_yaw
+
+    malha = render3d.load_mesh(origem)
+    imagens = render3d.turntable(malha, frames=frames, size=size, pitch=pitch, start=start, zoom=zoom)
+
+    if pixels:
+        imagens = [imaging.pixelate(im, pixels) for im in imagens]
+    if palette:
+        cores = palettes.resolve(palette)
+        imagens = [imaging.quantize_to_palette(im, cores) for im in imagens]
+
+    frames_dir = directory / f"{stem}-frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frames_dir.glob("*.png"):
+        stale.unlink()
+    caminhos: list[Path] = []
+    for indice, imagem in enumerate(imagens, start=1):
+        destino = frames_dir / f"{stem}-{indice:02d}.png"
+        imagem.save(destino)
+        caminhos.append(destino)
+
+    resultado = Mesh3D(path=origem, frames=caminhos, stats=mesh_stats(origem))
+    if sheet and imagens:
+        folha = imaging.Image.new("RGBA", (imagens[0].width * len(imagens), imagens[0].height), (0, 0, 0, 0))
+        for indice, imagem in enumerate(imagens):
+            folha.paste(imagem, (indice * imagens[0].width, 0))
+        resultado.sheet = unique_path(directory, f"{stem}-sheet", ".png")
+        folha.save(resultado.sheet)
+    if gif and imagens:
+        resultado.gif = unique_path(directory, stem, ".gif")
+        imaging.save_gif(imagens, resultado.gif, fps=fps)
+    return resultado
+
+
+async def sprite_3d(
+    subject: str,
+    *,
+    out_dir: Path | None = None,
+    name: str | None = None,
+    engine: str | None = None,
+    frames: int = 8,
+    size: int = 192,
+    pitch: float = DEFAULT_PITCH,
+    zoom: float = 0.92,
+    gif: bool = False,
+    fps: int = 12,
+    pixels: int | None = None,
+    palette: str | None = None,
+    reference: str | Path | None = None,
+    on_stage=None,
+    **kwargs,
+) -> Mesh3D:
+    """Prompt → imagem de referência → malha → folha de direções.
+
+    Os três passos são separados de propósito, e cada um tem comando próprio: a
+    referência sai errada com alguma frequência (personagem cortado, dois
+    personagens, fundo com chão), e refazer só o passo que falhou é muito mais
+    barato que refazer a corrente inteira.
+    """
+    directory = Path(out_dir) if out_dir else default_out_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = safe_stem(name or slugify(subject))
+
+    if reference:
+        referencia = existing_path(reference)
+        gerado = None
+    else:
+        prompt = MESH_REF_TEMPLATE.format(subject=subject)
+        if on_stage:
+            on_stage("reference")
+        gerado = await _run(prompt, out_dir=directory, name=f"{stem}-ref", **kwargs)
+        referencia = gerado.paths[0]
+
+    malha = mesh_from_image(referencia, out_dir=directory, name=stem, engine=engine, on_stage=on_stage)
+    volta = render_turntable(
+        malha.path,
+        out_dir=directory,
+        name=stem,
+        frames=frames,
+        size=size,
+        pitch=pitch,
+        zoom=zoom,
+        engine=malha.engine,
+        gif=gif,
+        fps=fps,
+        pixels=pixels,
+        palette=palette,
+    )
+    malha.frames = volta.frames
+    malha.sheet = volta.sheet
+    malha.gif = volta.gif
+    malha.prompt = subject
+    if gerado is not None:
+        malha.source_image = referencia
+    return malha

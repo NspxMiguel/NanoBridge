@@ -743,6 +743,160 @@ async def nanobridge_reset() -> str:
     return t("reset.done") if dropped else t("reset.nothing")
 
 
+def _respond_mesh(result: core.Mesh3D, previews: int = 4) -> list[TextContent | ImageContent]:
+    """Resposta das ferramentas 3D. Mesmo contrato das 2D: JSON puro no texto.
+
+    A malha em si não vira pré-visualização — GLB não é imagem, e mandar bytes
+    de malha para o agente só queima contexto. Quem mostra o resultado são os
+    quadros renderizados, que é justamente o ponto de existir um render aqui.
+    """
+    resumo = {
+        "mesh": str(result.path),
+        "engine": result.engine,
+        "engine_label": result.engine_label,
+        "license": result.license,
+        "reference_image": str(result.source_image) if result.source_image else None,
+        "frames": [str(p) for p in result.frames],
+        "sheet": str(result.sheet) if result.sheet else None,
+        "gif": str(result.gif) if result.gif else None,
+        "stats": result.stats,
+    }
+    if result.stats.get("depth_ratio", 1.0) < 0.10:
+        resumo["warning"] = t("mesh3d.flat_warning")
+    saida: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(resumo, ensure_ascii=False))
+    ]
+    for caminho in (result.sheet, *result.frames[:previews]):
+        if caminho:
+            saida.append(_preview(caminho))
+    return saida
+
+
+@mcp.tool()
+@handled
+def list_mesh_engines() -> str:
+    """The 3D engines NanoBridge can call, and what each one gives back.
+
+    Nano Banana draws pixels; it never returns geometry. These engines are the
+    other half: single-image-to-3D models that turn one clean reference picture
+    into a closed mesh. They are free public Hugging Face Spaces — no key, no
+    account — so the cost is queueing, not money.
+    """
+    from . import mesh3d
+
+    return json.dumps(
+        [
+            {
+                "name": e.name,
+                "label": e.label,
+                "space": e.space,
+                "license": e.license,
+                "vertex_colors": e.colored,
+                "front_yaw": e.front_yaw,
+            }
+            for e in mesh3d.ENGINES
+        ],
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
+@handled
+def generate_mesh(
+    image: str,
+    out_dir: str | None = None,
+    name: str | None = None,
+    engine: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Turn ONE image into a real 3D mesh (.glb) with a single-image-to-3D model.
+
+    The input picture decides everything. It must show one object, whole, facing
+    the camera, on a plain background, with visible shading — a 3D render, a
+    photo, or a painted character sheet. Flat pixel art does NOT work: there is
+    no volume in it to reconstruct, and the result comes back as a slab (watch
+    `stats.depth_ratio`, which is under 0.1 when that happens).
+
+    To go from a text prompt in one step, use `generate_sprite_3d` instead.
+    """
+    resultado = core.mesh_from_image(
+        image, out_dir=Path(out_dir) if out_dir else None, name=name, engine=engine
+    )
+    return _respond_mesh(resultado, previews=0)
+
+
+@mcp.tool()
+@handled
+def render_turntable(
+    mesh: str,
+    out_dir: str | None = None,
+    name: str | None = None,
+    frames: int = 8,
+    size: int = 192,
+    pitch: float = 15.0,
+    start: float | None = None,
+    zoom: float = 0.92,
+    engine: str | None = None,
+    gif: bool = False,
+    fps: int = 12,
+    pixels: int | None = None,
+    palette: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Render a .glb/.obj mesh as an N-direction sprite — the classic pre-rendered look.
+
+    This is what makes the 3D useful in a 2D game: eight frames, 45 degrees
+    apart, all framed at the same scale so the character does not grow and
+    shrink as it turns. `pitch` tilts the camera — 0 is a side-on platformer
+    view, 30 is proper isometric.
+
+    Everything is drawn locally with a software rasteriser: no GPU, no network,
+    deterministic output. The frames come out as ordinary PNGs, so `pack_atlas`,
+    `apply_palette` and `slice_sheet` all work on them afterwards.
+    """
+    resultado = core.render_turntable(
+        mesh, out_dir=Path(out_dir) if out_dir else None, name=name, frames=frames,
+        size=size, pitch=pitch, start=start, zoom=zoom, engine=engine, gif=gif,
+        fps=fps, pixels=pixels, palette=palette,
+    )
+    return _respond_mesh(resultado)
+
+
+@mcp.tool()
+@handled
+async def generate_sprite_3d(
+    subject: str,
+    out_dir: str | None = None,
+    name: str | None = None,
+    engine: str | None = None,
+    frames: int = 8,
+    size: int = 192,
+    pitch: float = 15.0,
+    zoom: float = 0.92,
+    gif: bool = False,
+    fps: int = 12,
+    pixels: int | None = None,
+    palette: str | None = None,
+    reference: str | None = None,
+) -> list[TextContent | ImageContent]:
+    """Prompt to 3D mesh to an 8-direction sprite sheet, in one call.
+
+    Three models in a row, and each step has its own tool if you need to redo
+    just that one: Nano Banana draws a clean 3D-render reference, a
+    single-image-to-3D model reconstructs geometry from it, and a local
+    rasteriser spins that geometry into game-ready frames.
+
+    Describe the character as a physical object, not as art: "a round brown
+    mushroom enemy with big angry eyes" works, "pixel art mushroom" does not —
+    the reconstruction needs volume and shading to read. Pass `reference` to
+    reuse a picture you already have and skip the drawing step.
+    """
+    resultado = await core.sprite_3d(
+        subject, out_dir=Path(out_dir) if out_dir else None, name=name, engine=engine,
+        frames=frames, size=size, pitch=pitch, zoom=zoom, gif=gif, fps=fps,
+        pixels=pixels, palette=palette, reference=reference,
+    )
+    return _respond_mesh(resultado)
+
+
 def run() -> None:
     config.apply_saved_language()
     mcp.run()

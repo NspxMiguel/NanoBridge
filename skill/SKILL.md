@@ -52,7 +52,41 @@ Reach for `generate_sprite` when there is genuinely one thing to draw.
 | a few options to choose between | `generate_variations` — returns a contact sheet to look at |
 | a repeating surface | `generate_texture` — measures the seam instead of promising it |
 | lighting a 2D sprite | `build_normal_map` — local, no quota |
+| a character seen from **several angles** | `generate_sprite_3d` — builds real geometry, then renders it |
+| a `.glb` you already have | `render_turntable` — local, no quota, no network |
 | one sprite | `generate_sprite` |
+
+## The 3D half, and its one hard rule
+
+`generate_sprite_3d` chains three models: Nano Banana draws a reference, a
+single-image-to-3D model reconstructs a mesh from it, and a local rasteriser
+spins that mesh into an N-direction sprite sheet. `generate_mesh` and
+`render_turntable` are the same steps split up, for when only one needs redoing.
+
+**The rule: describe a physical object, never the art style.** The
+reconstruction needs volume and shading to read. "a round brown mushroom enemy
+with big angry eyes and small feet" works. "pixel art mushroom" does not — flat
+art has no volume to reconstruct, and the model returns a slab. The result
+carries `stats.depth_ratio`; under 0.1 means exactly that happened, and the fix
+is the reference, not the settings.
+
+Reach for it when the ask needs **the same character from several angles** — a
+walk cycle facing four ways, an isometric unit, a rotating pickup. For one
+character seen from one side, `generate_sprite` is better and much cheaper: it
+is one model instead of three.
+
+Two things that make the output usable, and are easy to miss:
+
+- **`pitch` is the camera tilt.** 0 is a side-on platformer view, 30 is proper
+  isometric. Getting this wrong makes a technically correct sprite unusable in
+  the game it was drawn for.
+- **The frames are ordinary PNGs.** `pack_atlas`, `apply_palette` and
+  `slice_sheet` all work on them, so `palette="gameboy"` plus `pixels=48` turns a
+  reconstructed mesh into four-colour pixel art.
+
+The mesh engines are free public Spaces, so they queue and sometimes fall over;
+NanoBridge walks the list rather than failing on the first. `list_mesh_engines`
+says who is in it and what each returns.
 
 ## Doing it
 

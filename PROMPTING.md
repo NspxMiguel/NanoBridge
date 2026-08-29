@@ -153,3 +153,34 @@ failed.)
 Every generation spends the Gemini plan's quota; `doctor` shows what is left.
 The local commands — `cut`, `slice`, `atlas`, `normal`, `tile`, `palette` —
 spend nothing. A good habit: generate once, then iterate locally.
+
+## Prompting for 3D is the opposite of prompting for a sprite
+
+`sprite3d` does not send your words to a 3D model — no such thing exists here.
+It sends them to Nano Banana to draw a **reference photo**, and that picture is
+then reconstructed into geometry. So the prompt is judged by a different reader,
+and the habits invert:
+
+| For a 2D sprite | For a 3D reference |
+| --- | --- |
+| "pixel art", "flat", "2-bit" | never — flat art has no volume to reconstruct |
+| a pose with personality | a neutral A-pose, facing the camera |
+| dramatic light, rim light | soft even studio light, no harsh shadow |
+| any framing | the whole object, head to feet, centred |
+| background can be anything | plain, flat, empty — no floor, no props |
+
+The template already carries the second column, so describe the **thing**, not
+the picture: "a wooden treasure chest with iron bands and a heavy padlock", not
+"a 3D render of a chest asset for a game".
+
+Two failures worth recognising, because they look like different bugs and are
+the same one:
+
+- **the mesh comes back as a slab** (`depth_ratio` under 0.1) — the reference was
+  flat art. Regenerate the reference; no render setting fixes it.
+- **the mesh has two heads or a floating limb** — the reference had more than one
+  object, or the character was cut off at the frame edge. Same fix.
+
+Because the reference is the step that fails, generate it on its own with `gen`
+when it matters, look at it, and pass the one you like to `mesh` — that is the
+whole reason the three steps are separate commands.

@@ -1,12 +1,12 @@
 [project]
 name = "nanobridge"
-version = "0.6.0"
-description = "Gemini's Nano Banana image generation, wired into any agent as a CLI and an MCP server."
+version = "0.7.0"
+description = "Nano Banana image generation plus single-image-to-3D, wired into any agent as a CLI and an MCP server."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }
 authors = [{ name = "Miguel Moretti" }]
-keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites"]
+keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites", "image-to-3d", "triposr"]
 
 dependencies = [
   # 2.0 mudou a forma de client.quotas e de start_chat; o codigo depende das duas.
@@ -18,7 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+# O 3D e opcional de proposito: quem so quer sprite 2D nao deve baixar NumPy e
+# trimesh atras. `pip install 'nanobridge[3d]'` liga mesh/turntable/sprite3d.
+"3d" = ["trimesh>=4.0", "numpy>=1.24", "gradio_client>=1.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "trimesh>=4.0", "numpy>=1.24", "gradio_client>=1.0"]
 
 [project.scripts]
 nanobridge = "nanobridge.cli:main"
@@ -52,5 +55,6 @@ ignore = [
 # O sinal × aparece de propósito: é o que o usuário digita em "4×2", e é como
 # se escreve uma dimensão ("2816×1536") num comentário.
 "nanobridge/imaging.py" = ["RUF001", "RUF002"]
+"nanobridge/core.py" = ["RUF003"]
 # Canal falso de teste: atributo mutável de classe é o ponto, e o × idem.
 "tests/*" = ["RUF012", "RUF001", "RUF002"]

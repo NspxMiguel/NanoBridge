@@ -78,3 +78,38 @@ def test_the_readme_answers_the_login_question():
     readme = (ROOT / "README.md").read_text().lower()
     assert "there is no login" in readme
     assert "nanobridge setup" in readme
+
+
+def test_the_docs_name_the_3d_engines_and_their_licence():
+    """Quem gerou a malha não é o Nano Banana, e isso não pode ficar implícito:
+    são modelos de terceiros, com licença própria, rodando em Space público."""
+    from nanobridge import mesh3d
+
+    readme = (ROOT / "README.md").read_text()
+    for motor in mesh3d.ENGINES:
+        assert motor.space in readme or motor.label.split(" (")[0] in readme, (
+            f"o README não diz que a malha pode vir do {motor.label}"
+        )
+    assert "MIT" in readme
+
+
+def test_the_docs_warn_that_flat_art_does_not_reconstruct():
+    """A armadilha número um do 3D. Se o texto sumir, todo mundo tenta mandar
+    pixel art e recebe uma placa sem entender por quê."""
+    for doc in ("README.md", "skill/SKILL.md", "PROMPTING.md"):
+        texto = (ROOT / doc).read_text().lower()
+        assert "flat" in texto and ("depth_ratio" in texto or "volume" in texto), (
+            f"{doc} não avisa que arte 2D chapada não vira malha"
+        )
+
+
+def test_the_docs_do_not_claim_the_image_model_makes_meshes():
+    """Limite honesto, escrito de propósito: modelo de imagem não devolve
+    geometria, e o dia em que a documentação sugerir isso ela virou propaganda."""
+    for doc in ("README.md", "docs/index.html", "skill/SKILL.md"):
+        texto = (ROOT / doc).read_text().lower()
+        if "3d" not in texto:
+            continue
+        assert "single-image-to-3d" in texto or "reconstru" in texto, (
+            f"{doc} fala de 3D sem dizer que quem faz a malha é outro modelo"
+        )

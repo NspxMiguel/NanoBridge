@@ -79,7 +79,7 @@
 <div class="wrap">
 
 <header>
-  <span class="badge">🍌 NanoBridge 0.6.0</span>
+  <span class="badge">🍌 NanoBridge 0.7.0</span>
   <h1><span lang="en">Nano Banana, wired into your agent.</span><span lang="pt">Nano Banana, ligado no seu agente.</span></h1>
   <p class="lede">
     <span lang="en">Gemini's image models as an <strong>MCP server</strong> and a <strong>CLI</strong> — spending the Gemini plan you already pay for, instead of billing per image.</span>
@@ -145,6 +145,34 @@
   <p style="margin-top:18px">
     <span lang="en">Models say a texture is "seamless" and often it is not — the seam only shows once four copies sit side by side in the game. A pure gradient measures 119 on that scale, a pattern that already repeats measures 1.57, and anything under 3 nobody sees.</span>
     <span lang="pt">O modelo diz que a textura é "seamless" e muitas vezes não é — a emenda só aparece quando quatro cópias ficam lado a lado no jogo. Um degradê puro mede 119 nessa escala, um padrão que já repete mede 1,57, e abaixo de 3 ninguém vê.</span>
+  </p>
+</section>
+
+<section id="tresde">
+  <h2><span lang="en">The second model: 3D</span><span lang="pt">O segundo modelo: 3D</span></h2>
+  <p class="sub">
+    <span lang="en">The Nano Banana draws pixels. Geometry comes from somewhere else.</span>
+    <span lang="pt">O Nano Banana desenha pixel. Geometria vem de outro lugar.</span>
+  </p>
+  <div class="sheet">
+    <img src="assets/turntable.png" alt="one mushroom enemy rendered from eight directions">
+  </div>
+  <p>
+    <span lang="en">No prompt makes an image model return a mesh, and anything claiming otherwise is selling something. So the 3D comes from a different family: <strong>single-image-to-3D</strong> reconstruction, which looks at one picture and returns a closed object. The two halves fit because each solves the other's problem — those models need a clean, centred, plainly-lit reference, and that is exactly what Nano Banana can be asked for.</span>
+    <span lang="pt">Nenhum prompt faz um modelo de imagem devolver malha, e quem disser o contrário está vendendo alguma coisa. Então o 3D vem de outra família: <strong>reconstrução de imagem única</strong>, que olha uma foto e devolve um objeto fechado. As duas metades se encaixam porque uma resolve o problema da outra — esses modelos precisam de uma referência limpa, centrada e de luz lisa, que é exatamente o que dá pra encomendar ao Nano Banana.</span>
+  </p>
+<pre><code>nanobridge sprite3d "a round brown mushroom enemy with big angry eyes" --gif</code></pre>
+  <p>
+    <span lang="en">The eight frames above are that one command: a reference drawn, a mesh reconstructed, and the mesh spun through eight directions <strong>at one fixed scale</strong> — so the character does not swell and shrink as it turns, which is the whole difference between a usable sprite and a wobbling one. <code>--pitch 0</code> is a side-on platformer view, <code>--pitch 30</code> is proper isometric, and the frames are ordinary PNGs, so <code>atlas</code>, <code>palette</code> and <code>slice</code> still work on them.</span>
+    <span lang="pt">Os oito quadros acima são esse comando só: uma referência desenhada, uma malha reconstruída, e a malha girada em oito direções <strong>numa escala fixa</strong> — o personagem não cresce e encolhe ao virar, que é a diferença inteira entre sprite usável e sprite tremendo. <code>--pitch 0</code> é a vista lateral de plataforma, <code>--pitch 30</code> é a isométrica de verdade, e os quadros são PNG comum, então <code>atlas</code>, <code>palette</code> e <code>slice</code> continuam funcionando neles.</span>
+  </p>
+  <p>
+    <span lang="en">The reconstruction runs on free public Hugging Face Spaces — TripoSR (MIT) and Hunyuan3D-2 — so there is no key and no bill; you pay in queueing. The last step, mesh to frames, is a software rasteriser in the repo: NumPy, no GPU, no network, and the same pixels on every machine.</span>
+    <span lang="pt">A reconstrução roda em Space público da Hugging Face — TripoSR (MIT) e Hunyuan3D-2 — sem chave e sem conta; o preço é a fila. O último passo, malha para quadros, é um rasterizador escrito aqui: NumPy, sem placa de vídeo, sem rede, e os mesmos pixels em qualquer máquina.</span>
+  </p>
+  <p>
+    <span lang="en"><strong>The input picture decides everything:</strong> one object, whole, facing the camera, plain background, visible shading. Flat pixel art does not work — there is no volume in it to reconstruct. Measured on this project's own 32×32 hero sprite, the result came back 7% as deep as it was wide, so <code>mesh</code> prints a depth ratio and warns when it collapses.</span>
+    <span lang="pt"><strong>A imagem de entrada decide tudo:</strong> um objeto só, inteiro, de frente, fundo liso, com sombreado visível. Arte 2D chapada não funciona — não há volume nenhum para reconstruir. Medido no sprite de 32×32 deste próprio projeto, o resultado voltou com 7% de profundidade, e por isso o <code>mesh</code> imprime a razão de profundidade e avisa quando ela desaba.</span>
   </p>
 </section>
 
