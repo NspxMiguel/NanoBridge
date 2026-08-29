@@ -137,17 +137,27 @@ def desdobrar(objeto, margem: float = 0.02) -> bool:
     return True
 
 
-def _fonte_de_cor(arvore, malha):
-    """O nó que lê a cor de onde ela estiver: atributo de cor por vértice, ou a
-    textura que o GLB já trouxe."""
-    if malha.color_attributes:
-        no = arvore.nodes.new("ShaderNodeVertexColor")
-        no.layer_name = malha.color_attributes[0].name
-        return no, "Color"
-    for no in arvore.nodes:
-        if no.type == "TEX_IMAGE" and no.image:
-            return no, "Color"
-    return None, None
+def _imagem_do_material(malha):
+    """A textura que a malha já trazia, se trouxer.
+
+    Tem que ser procurada nos materiais **originais**, antes de qualquer coisa
+    ser trocada. A versão anterior procurava no material novo, recém-criado, que
+    obviamente não tem textura nenhuma — e o resultado era o refino declarar
+    "esta malha não tem cor" para toda malha texturizada. Medido: uma gárgula do
+    TRELLIS, que chega com UV e textura de 1024 dentro do GLB, saía do refino
+    sem textura alguma.
+    """
+    for material in malha.materials:
+        if not material or not material.use_nodes:
+            continue
+        for no in material.node_tree.nodes:
+            if no.type == "TEX_IMAGE" and no.image:
+                return no.image
+    return None
+
+
+def tem_cor(objeto) -> bool:
+    return bool(objeto.data.color_attributes) or _imagem_do_material(objeto.data) is not None
 
 
 def _material_emissivo(objeto):
@@ -159,14 +169,25 @@ def _material_emissivo(objeto):
     com a sombra queimada dentro dela, impossível de desfazer depois.
     """
     malha = objeto.data
+    imagem = None if malha.color_attributes else _imagem_do_material(malha)
+    if not malha.color_attributes and imagem is None:
+        return False
+
     material = bpy.data.materials.new(name="nb_origem")
     material.use_nodes = True
     arvore = material.node_tree
-    fonte, saida = _fonte_de_cor(arvore, malha)
-    if fonte is None:
-        return False
+    if malha.color_attributes:
+        fonte = arvore.nodes.new("ShaderNodeVertexColor")
+        fonte.layer_name = malha.color_attributes[0].name
+    else:
+        # Textura: ela é lida pela UV que a malha original já tem, que não é a
+        # mesma UV do destino — e é justamente por isso que a assadura existe,
+        # para transferir de uma para a outra.
+        fonte = arvore.nodes.new("ShaderNodeTexImage")
+        fonte.image = imagem
+
     emissao = arvore.nodes.new("ShaderNodeEmission")
-    arvore.links.new(fonte.outputs[saida], emissao.inputs["Color"])
+    arvore.links.new(fonte.outputs["Color"], emissao.inputs["Color"])
     saida_material = next(n for n in arvore.nodes if n.type == "OUTPUT_MATERIAL")
     arvore.links.new(emissao.outputs["Emission"], saida_material.inputs["Surface"])
     malha.materials.clear()
@@ -197,13 +218,7 @@ def assar_cor(destino_obj, tamanho: int, arquivo: str, origem_obj=None,
     Sem ele, assa o objeto sobre si mesmo.
     """
     fonte = origem_obj or destino_obj
-    if not fonte.data.color_attributes and not any(
-        n.type == "TEX_IMAGE" and n.image
-        for m in fonte.data.materials if m and m.use_nodes
-        for n in m.node_tree.nodes
-    ):
-        return None
-    if not _material_emissivo(fonte):
+    if not tem_cor(fonte) or not _material_emissivo(fonte):
         return None
 
     material = bpy.data.materials.new(name="nanobridge")

@@ -333,12 +333,18 @@ nanobridge refine chest.glb --faces game -f .glb -f .fbx -f .blend
 ```
 
 <p align="center">
+  <img src="assets/gargoyle.png" width="720" alt="a stone gargoyle: TRELLIS geometry, retopologised to quads, texture baked">
   <img src="assets/blender-render.png" width="720" alt="a treasure chest rendered from four angles in Blender">
 </p>
+
+Both of those are one `model` command each. The gargoyle is TRELLIS geometry
+retopologised to **5 678 quads** with its texture rebaked onto the new UVs; the
+chest is TripoSR's 279 329 faces cut to 5 519.
 
 | Step | Why it is not optional |
 | --- | --- |
 | weld, dissolve degenerate faces, recalculate normals | a single non-manifold edge makes QuadriFlow refuse the whole mesh |
+| read the colour from wherever it lives | some engines return vertex colours, others a UV texture — both have to survive |
 | **QuadriFlow retopology** | triangle soup deforms badly when animated and takes no edge loops; quads are what a modeller hands over |
 | Smart UV unwrap | no UVs, no texture — and no texture, no colour outside the generator |
 | **bake the dense mesh's colour onto the clean one** | the same high-to-low transfer used between a sculpt and a game model |

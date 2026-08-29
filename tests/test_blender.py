@@ -213,3 +213,41 @@ def test_o_script_de_abertura_nao_quebra_sem_janela(tmp_path):
     )
     junto = (saida.stdout + saida.stderr).lower()
     assert "traceback" not in junto and "error:" not in junto
+
+
+def bicho_texturizado(caminho):
+    """Uma malha cuja cor mora numa TEXTURA, não em cor por vértice — que é
+    como o TRELLIS entrega, e o caso que o refino ignorava."""
+    m = trimesh.creation.icosphere(subdivisions=3)
+    verts = np.asarray(m.vertices)
+    u = 0.5 + np.arctan2(verts[:, 2], verts[:, 0]) / (2 * np.pi)
+    v = 0.5 - np.arcsin(np.clip(verts[:, 1], -1, 1)) / np.pi
+    quadros = np.zeros((64, 64, 3), dtype=np.uint8)
+    quadros[:32, :, 0] = 220      # metade vermelha, metade azul: fácil de medir
+    quadros[32:, :, 2] = 220
+    m.visual = trimesh.visual.TextureVisuals(
+        uv=np.column_stack([u, v]),
+        material=trimesh.visual.material.PBRMaterial(baseColorTexture=Image.fromarray(quadros)),
+    )
+    m.export(caminho)
+    return caminho
+
+
+@tem_blender
+def test_a_cor_que_vem_em_textura_tambem_e_assada(tmp_path):
+    """O refino lia cor por vértice e só. Numa malha texturizada ele procurava a
+    imagem no material que ele mesmo acabara de criar — vazio, por construção —
+    e declarava "esta malha não tem cor". Medido numa gárgula do TRELLIS, que
+    chega com UV e textura de 1024 dentro do GLB e saía do refino sem nenhuma.
+    """
+    resultado = core.refine_mesh(bicho_texturizado(tmp_path / "tex.glb"),
+                                 out_dir=tmp_path / "s", name="t", faces=600,
+                                 texture_size=256, formats=[".glb"])
+    assert resultado.texture is not None, "a textura da origem foi perdida no refino"
+    pixels = np.asarray(Image.open(resultado.texture).convert("RGB"))
+    visiveis = pixels[pixels.sum(axis=2) > 30]
+    assert len(visiveis) > 0
+    # As duas cores da origem têm que aparecer na textura assada.
+    assert (visiveis[:, 0] > 120).any() and (visiveis[:, 2] > 120).any(), (
+        "a assadura saiu monocromática — a textura de origem não chegou ao bake"
+    )
