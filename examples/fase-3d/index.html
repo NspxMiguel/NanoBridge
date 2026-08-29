@@ -1,0 +1,194 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>A Fase em 3D — feito com NanoBridge</title>
+<style>
+  body{margin:0;background:#0b0c14;color:#EAD4AA;font:13px ui-monospace,monospace;
+       display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px}
+  h1{margin:0;font-size:14px;color:#E4A672;text-align:center}
+  #palco{width:100%;display:flex;justify-content:center}
+  #wrap{position:relative;line-height:0}
+  canvas{border-radius:6px;display:block;box-shadow:0 12px 40px rgba(0,0,0,.55)}
+  #hud{position:absolute;inset:8px 10px auto 10px;display:flex;justify-content:space-between;
+       font-weight:700;text-shadow:0 2px 4px rgba(0,0,0,.8);pointer-events:none;line-height:1.3}
+  #erro{color:#B13E53;max-width:560px;text-align:center;line-height:1.6}
+  small{color:#B86F50;text-align:center;max-width:620px;line-height:1.6}
+  kbd{background:#2a2233;border:1px solid #4a3b52;border-bottom-width:2px;border-radius:4px;
+      padding:1px 6px;color:#EAD4AA}
+</style>
+<h1>A FASE EM 3D — a mesma textura e o mesmo normal map, agora iluminados de verdade</h1>
+<div id="palco"><div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="hud"><span id="moedas">✦ 0</span><span id="dica">← → girar · ↑ ↓ andar</span></div>
+</div></div>
+<small>
+  Os sprites são <b>billboards</b> — planos que sempre encaram a câmera, como Doom fazia.
+  O chão e as paredes usam a textura que o <code>texture</code> gerou e o <b>normal map</b> que o
+  <code>normal</code> derivou: é a luz de verdade batendo no relevo, não um desenho de sombra.
+  <br>Setas ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <kbd>espaço</kbd> pula ·
+  <kbd>L</kbd> liga/desliga o normal map
+</small>
+<div id="erro"></div>
+
+<script type="module">
+const erro = (m) => { document.getElementById("erro").textContent = m; };
+let THREE;
+try {
+  THREE = await import("https://unpkg.com/three@0.169.0/build/three.module.js");
+} catch (e) {
+  erro("Não consegui carregar o three.js (precisa de internet nesta página). " + e.message);
+  throw e;
+}
+
+const cv = document.getElementById("c");
+const ren = new THREE.WebGLRenderer({ canvas: cv, antialias: false });
+ren.setPixelRatio(Math.min(devicePixelRatio, 2));
+const cena = new THREE.Scene();
+cena.background = new THREE.Color("#7EC8E8");
+cena.fog = new THREE.Fog("#7EC8E8", 18, 46);
+
+const cam = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 120);
+
+function dimensionar() {
+  const L = Math.min(720, innerWidth - 28, (innerHeight - 190) * (16 / 9));
+  const w = Math.max(280, Math.round(L)), h = Math.round(w * 9 / 16);
+  ren.setSize(w, h, true); cam.aspect = w / h; cam.updateProjectionMatrix();
+}
+addEventListener("resize", dimensionar); dimensionar();
+
+// ── texturas: o que a ferramenta produziu, usado como material 3D ───────────
+const tl = new THREE.TextureLoader();
+const carregar = (p, repeat) => new Promise((ok, no) => tl.load(p, t => {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) t.repeat.set(repeat[0], repeat[1]);
+  ok(t);
+}, undefined, no));
+const carregarLinear = (p, repeat) => new Promise((ok, no) => tl.load(p, t => {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter;               // normal map NÃO leva sRGB
+  if (repeat) t.repeat.set(repeat[0], repeat[1]);
+  ok(t);
+}, undefined, no));
+
+const [pisoMap, pisoNrm, paredeMap, paredeNrm] = await Promise.all([
+  carregar("assets/piso.png", [24, 24]), carregarLinear("assets/piso-normal.png", [24, 24]),
+  carregar("assets/parede.png", [12, 2]), carregarLinear("assets/parede-normal.png", [12, 2]),
+]);
+
+const matPiso = new THREE.MeshStandardMaterial({ map: pisoMap, normalMap: pisoNrm, roughness: .95 });
+const matParede = new THREE.MeshStandardMaterial({ map: paredeMap, normalMap: paredeNrm, roughness: .9 });
+
+const chao = new THREE.Mesh(new THREE.PlaneGeometry(96, 96), matPiso);
+chao.rotation.x = -Math.PI / 2; cena.add(chao);
+
+// paredes laterais, para a luz ter em que bater
+for (const lado of [-1, 1]) {
+  const p = new THREE.Mesh(new THREE.BoxGeometry(96, 6, 1), matParede);
+  p.position.set(0, 3, lado * 11); cena.add(p);
+}
+
+// ── luz: é ela que revela o normal map ──────────────────────────────────────
+cena.add(new THREE.AmbientLight(0xffffff, .55));
+const sol = new THREE.DirectionalLight(0xfff0d0, 1.5);
+sol.position.set(-6, 9, 4); cena.add(sol);
+const tocha = new THREE.PointLight(0xffb066, 90, 26, 2);
+tocha.position.set(0, 2.4, 0); cena.add(tocha);
+
+// ── sprites como billboards ─────────────────────────────────────────────────
+function billboard(caminho, alturaMundo) {
+  const tex = tl.load(caminho, t => {
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+    t.colorSpace = THREE.SRGBColorSpace;
+    const r = t.image.width / t.image.height;
+    m.scale.set(alturaMundo * r, alturaMundo, 1);
+  });
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: .5 });
+  const m = new THREE.Sprite(mat);
+  m.scale.set(alturaMundo, alturaMundo, 1);
+  cena.add(m); return m;
+}
+
+const quadrosCorrida = ["01","02","03","04"].map(n => {
+  const t = tl.load(`assets/run-frames/run-${n}.png`);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace; return t;
+});
+
+const heroi = billboard("assets/run-frames/run-01.png", 2.0);
+const bichos = [[-8, -3], [6, 2], [14, -5], [-15, 4]].map(([x, z]) => {
+  const b = billboard("assets/goomba.png", 1.7); b.position.set(x, .85, z);
+  b.userData = { vx: (Math.random() - .5) * .05, vz: (Math.random() - .5) * .05 }; return b;
+});
+const moedas = [];
+for (let i = 0; i < 16; i++) {
+  const a = i / 16 * Math.PI * 2, r = 6 + (i % 4) * 3.2;
+  const m = billboard("assets/coin.png", 1.1);
+  m.position.set(Math.cos(a) * r, 1.1, Math.sin(a) * r);
+  m.userData = { fase: i * .7, viva: true }; moedas.push(m);
+}
+// alguns blocos de verdade, para provar que é geometria e não desenho
+const matBloco = new THREE.MeshStandardMaterial({ map: paredeMap.clone(), normalMap: paredeNrm.clone(), roughness: .9 });
+matBloco.map.repeat.set(1, 1); matBloco.normalMap.repeat.set(1, 1);
+for (const [x, z] of [[-4, -6], [-4, -4.5], [4, 5], [9, -2], [9, -.5]]) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), matBloco);
+  b.position.set(x, .75, z); cena.add(b);
+}
+
+// ── controles ───────────────────────────────────────────────────────────────
+const teclas = {};
+addEventListener("keydown", e => {
+  teclas[e.code] = true;
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+  if (e.code === "KeyL") {
+    const on = matPiso.normalMap !== null;
+    matPiso.normalMap = on ? null : pisoNrm; matParede.normalMap = on ? null : paredeNrm;
+    matPiso.needsUpdate = matParede.needsUpdate = true;
+    document.getElementById("dica").textContent = on ? "normal map DESLIGADO (L)" : "normal map ligado (L)";
+  }
+});
+addEventListener("keyup", e => teclas[e.code] = false);
+
+// Começa no meio da sala: as paredes ficam em z = ±11, e a câmera fica 6.5
+// atrás do herói — em pz = 8 ela nascia do lado de fora, encarando o tijolo.
+let ang = 0, px = 0, pz = 0, vy = 0, py = 1.0, passo = 0, pontos = 0, t = 0;
+
+function laco() {
+  requestAnimationFrame(laco); t++;
+  const girar = (teclas.ArrowLeft || teclas.KeyA ? 1 : 0) - (teclas.ArrowRight || teclas.KeyD ? 1 : 0);
+  const andar = (teclas.ArrowUp || teclas.KeyW ? 1 : 0) - (teclas.ArrowDown || teclas.KeyS ? 1 : 0);
+  ang += girar * .035;
+  const vel = andar * .16;
+  px -= Math.sin(ang) * vel; pz -= Math.cos(ang) * vel;
+  px = Math.max(-44, Math.min(44, px)); pz = Math.max(-10, Math.min(10, pz));
+  if (teclas.Space && py <= 1.001) vy = .24;
+  vy -= .012; py = Math.max(1.0, py + vy); if (py <= 1.0) vy = 0;
+
+  if (Math.abs(vel) > .01) passo += .18;
+  heroi.material.map = quadrosCorrida[Math.floor(passo) % 4];
+  heroi.material.needsUpdate = true;
+  heroi.position.set(px, py, pz);
+
+  for (const b of bichos) {
+    b.position.x += b.userData.vx; b.position.z += b.userData.vz;
+    if (Math.abs(b.position.x) > 20) b.userData.vx *= -1;
+    if (Math.abs(b.position.z) > 8) b.userData.vz *= -1;
+    b.position.y = .85 + Math.abs(Math.sin(t * .05 + b.position.x)) * .12;
+  }
+  for (const m of moedas) if (m.userData.viva) {
+    m.position.y = 1.1 + Math.sin(t * .06 + m.userData.fase) * .18;
+    if (Math.hypot(m.position.x - px, m.position.z - pz) < 1.2) {
+      m.userData.viva = false; m.visible = false; pontos++;
+      document.getElementById("moedas").textContent = "✦ " + pontos;
+    }
+  }
+  tocha.position.set(px, py + 1.4, pz);
+
+  // câmera em terceira pessoa, atrás do herói
+  cam.position.set(px + Math.sin(ang) * 6.5, py + 3.2, pz + Math.cos(ang) * 6.5);
+  cam.lookAt(px, py + .6, pz);
+  ren.render(cena, cam);
+}
+laco();
+window.__pronto3d = true;
+</script>
