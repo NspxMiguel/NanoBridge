@@ -18,6 +18,8 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,8 +94,17 @@ class Trellis(Engine):
         # pessoa, ou com nenhum.
         with contextlib.suppress(Exception):
             client.predict(api_name="/start_session")
+        # Recortar o fundo ANTES. Sem este passo o TRELLIS reconstrói o fundo
+        # junto: medido, o personagem veio grudado numa laje cinza do tamanho
+        # dele, que era a sombra de chão da imagem de referência virando
+        # geometria. Os outros motores fazem o recorte por dentro; este não.
+        preparada = image
+        with contextlib.suppress(Exception):
+            saida = client.predict(image=handle_file(image), api_name="/preprocess_image")
+            if isinstance(saida, str) and saida:
+                preparada = saida
         return client.predict(
-            image=handle_file(image), multiimages=[], seed=0,
+            image=handle_file(preparada), multiimages=[], seed=0,
             ss_guidance_strength=7.5, ss_sampling_steps=12,
             slat_guidance_strength=3.0, slat_sampling_steps=12,
             multiimage_algo="stochastic", mesh_simplify=0.95, texture_size=1024,
@@ -114,11 +125,24 @@ class Hi3DGen(Engine):
         )
 
 
-#: Ordem de preferência. O TripoSR vem primeiro porque devolve **cor por
-#: vértice** — um sprite precisa da cor, e a malha branca do Hunyuan exige
-#: pintar depois. O Hunyuan fica como segunda opção porque a geometria dele é
-#: melhor, e às vezes é isso que se quer.
+#: Ordem de preferência, e ela muda conforme existe token: os que precisam dele
+#: são filtrados fora em `find`, então sem token a fila começa no Hunyuan 2.1.
+#:
+#: O TRELLIS lidera quando pode porque é o único que devolve **asset pronto** —
+#: malha enxuta com UV e textura de 1024 dentro do próprio GLB. Medido na mesma
+#: referência: 9 798 faces texturizadas contra as 285 267 sem UV do TripoSR.
+#: Depois dele vem geometria (Hunyuan 2.1), depois cor por vértice (TripoSR).
 ENGINES: tuple[Engine, ...] = (
+    Trellis(
+        name="trellis",
+        label="TRELLIS (Microsoft)",
+        space="trellis-community/TRELLIS",
+        endpoint="/generate_and_extract_glb",
+        front_yaw=180.0,
+        colored=True,
+        license="MIT",
+        needs_token=True,
+    ),
     Hunyuan(
         name="hunyuan21",
         label="Hunyuan3D-2.1 (Tencent)",
@@ -147,16 +171,6 @@ ENGINES: tuple[Engine, ...] = (
         colored=False,
         license="Tencent Hunyuan Community",
     ),
-    Trellis(
-        name="trellis",
-        label="TRELLIS (Microsoft)",
-        space="trellis-community/TRELLIS",
-        endpoint="/generate_and_extract_glb",
-        front_yaw=180.0,
-        colored=True,
-        license="MIT",
-        needs_token=True,
-    ),
     Hi3DGen(
         name="hi3dgen",
         label="Hi3DGen (Stable-X)",
@@ -170,12 +184,15 @@ ENGINES: tuple[Engine, ...] = (
 )
 
 
-def find(name: str | None) -> list[Engine]:
+def find(name: str | None, *, colored_only: bool = False) -> list[Engine]:
     if not name:
         # Sem token, os de ZeroGPU só devolveriam "cota esgotada" depois de uma
         # viagem inteira. Pular é mais honesto e mais rápido.
         tem_token = hf_token() is not None
-        return [e for e in ENGINES if tem_token or not e.needs_token]
+        fila = [e for e in ENGINES if tem_token or not e.needs_token]
+        # Sprite precisa de cor: uma malha branca vira silhueta cinza, e não há
+        # de onde tirar a pintura depois.
+        return [e for e in fila if e.colored] if colored_only else fila
     achados = [e for e in ENGINES if e.name == name]
     if not achados:
         conhecidos = ", ".join(e.name for e in ENGINES)
@@ -197,6 +214,54 @@ def hf_token() -> str | None:
         conteudo = caminho.read_text().strip()
         if conteudo:
             return conteudo
+    return _do_chaveiro()
+
+
+#: Serviços do chaveiro do macOS onde procurar, em ordem. O primeiro é o
+#: `claude-autonomous secret`, que é onde este projeto guarda chave; o segundo é
+#: o nome cru, para quem guardou à mão.
+KEYCHAIN_SERVICES = ("claude-autonomous:HF_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN")
+
+
+#: Resultado do chaveiro, guardado por processo. Sentinela própria porque `None`
+#: é resposta válida ("procurei e não achei") e tem que valer tanto quanto achar.
+_CHAVEIRO_NAO_LIDO = object()
+_chaveiro_cache: object = _CHAVEIRO_NAO_LIDO
+
+
+def _do_chaveiro() -> str | None:
+    """Último recurso: o chaveiro do macOS.
+
+    Existe porque o servidor MCP não herda variável de ambiente de shell nenhum
+    — ele sobe pelo agente, com o ambiente que o agente tem. Sem isto, o token
+    funcionaria no terminal e não funcionaria pelo MCP, que é o modo em que a
+    ferramenta mais é usada. E guardar o token num arquivo de texto só para o
+    MCP achar seria trocar o chaveiro por um .txt.
+
+    A resposta fica guardada por processo: `find()` chama isto a cada consulta de
+    fila, e um `security` novo por chamada chegou a derrubar a suíte de testes
+    com `BlockingIOError` de tanto subprocesso simultâneo.
+    """
+    global _chaveiro_cache
+    if _chaveiro_cache is not _CHAVEIRO_NAO_LIDO:
+        return _chaveiro_cache  # type: ignore[return-value]
+    if sys.platform != "darwin":
+        _chaveiro_cache = None
+        return None
+    for servico in KEYCHAIN_SERVICES:
+        try:
+            saida = subprocess.run(
+                ["security", "find-generic-password", "-a", os.environ.get("USER", ""),
+                 "-s", servico, "-w"],
+                capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            continue
+        valor = saida.stdout.strip()
+        if saida.returncode == 0 and valor:
+            _chaveiro_cache = valor
+            return valor
+    _chaveiro_cache = None
     return None
 
 
@@ -206,7 +271,14 @@ def _client(space: str):
     except ImportError as exc:
         raise Mesh3DUnavailableError("gradio_client") from exc
     token = hf_token()
-    return Client(space, verbose=False, hf_token=token) if token else Client(space, verbose=False)
+    if not token:
+        return Client(space, verbose=False)
+    # O nome do parâmetro mudou de `hf_token` para `token` no gradio_client 1.x.
+    # Perguntar à assinatura é o que não quebra na próxima versão nem na anterior.
+    import inspect
+
+    chave = "token" if "token" in inspect.signature(Client.__init__).parameters else "hf_token"
+    return Client(space, verbose=False, **{chave: token})
 
 
 def _collect(resposta) -> list[str]:
@@ -241,7 +313,7 @@ def _collect(resposta) -> list[str]:
 
 
 def to_mesh(image: str | Path, out: str | Path, *, engine: str | None = None,
-            on_stage=None) -> tuple[Path, Engine]:
+            colored_only: bool = False, on_stage=None) -> tuple[Path, Engine]:
     """Imagem → malha 3D. Devolve o arquivo salvo e qual motor a fez.
 
     Percorre a fila até um motor responder: Space público cai, entra em fila e
@@ -253,7 +325,7 @@ def to_mesh(image: str | Path, out: str | Path, *, engine: str | None = None,
     destino.parent.mkdir(parents=True, exist_ok=True)
 
     recusas: list[str] = []
-    for motor in find(engine):
+    for motor in find(engine, colored_only=colored_only):
         inicio = time.time()
         try:
             if on_stage:

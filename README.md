@@ -254,20 +254,40 @@ Five engines are wired in, and they are not interchangeable — `--engine` picks
 
 | Engine | Geometry | Colour | Needs a token |
 | --- | --- | --- | --- |
-| **Hunyuan3D-2.1** (Tencent) | best available for free | none | no |
-| **TripoSR** (Stability AI + Tripo, MIT) | fair | **vertex colours** | no |
+| **TRELLIS** (Microsoft, MIT) | very good, and **already low-poly** | **texture with real UVs, inside the GLB** | yes |
+| **Hunyuan3D-2.1** (Tencent) | best that answers without an account | none | no |
+| **TripoSR** (Stability AI + Tripo, MIT) | fair | vertex colours | no |
 | **Hunyuan3D-2** (Tencent) | good | none | no |
-| **TRELLIS** (MIT) | very good | **textured, real UVs** | yes |
-| **Hi3DGen** (MIT) | highest detail | none | yes |
+| **Hi3DGen** (Stable-X, MIT) | highest detail | none | yes |
 
-Colour is what makes a finished asset, so TripoSR is what `sprite3d` reaches for;
-`mesh` starts from the best geometry.
+<p align="center">
+  <img src="assets/trellis.png" width="720" alt="a character reconstructed by TRELLIS, four angles, fully textured">
+</p>
 
-**About that token.** The last two run on Hugging Face ZeroGPU, and ZeroGPU gives
-an anonymous caller **zero seconds** — they can never answer without one, so
-NanoBridge skips them rather than spending the round trip. A free Hugging Face
-account fixes it: put the token in `HF_TOKEN` (or `NANOBRIDGE_HF_TOKEN`) and they
-join the queue. Nothing else changes, and nothing is paid.
+**TRELLIS leads whenever it can, because it is the only one that hands back a
+finished asset.** Measured on the same reference: 9 798 faces with a 1024px UV
+texture packed into the GLB, against TripoSR's 285 267 faces with no UVs at all.
+It needs no `refine` to be usable — though `refine` still helps if you want a
+smaller face budget or a `.blend`.
+
+`sprite3d` only ever picks an engine that paints: an unpainted mesh renders as a
+grey silhouette, and there is nowhere to get the colour from afterwards.
+
+**About that token.** TRELLIS and Hi3DGen run on Hugging Face ZeroGPU, and
+ZeroGPU gives an anonymous caller **zero seconds** — they can never answer
+without one, so NanoBridge skips them rather than spending the round trip. A
+**free** Hugging Face account fixes it. NanoBridge looks for the token in
+`NANOBRIDGE_HF_TOKEN`, `HF_TOKEN`, `HUGGINGFACE_TOKEN`,
+`~/.cache/huggingface/token`, and finally the macOS keychain — that last one
+because the MCP server inherits no shell environment, and putting a token in a
+plain text file just so the MCP server can find it would be trading a keychain
+for a `.txt`. Nothing is paid either way.
+
+One trap worth knowing, because it cost a whole reconstruction: **TRELLIS does
+not remove the background by itself.** Called without its `/preprocess_image`
+step, it reconstructed the reference photo's floor shadow as a grey slab the
+size of the character, welded to his feet. Every other engine does the cutout
+internally; this one has to be asked.
 
 One thing that was tried and does not work: baking one engine's colour onto
 another engine's geometry. They reconstruct the same reference but agree on

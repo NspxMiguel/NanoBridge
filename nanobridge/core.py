@@ -909,6 +909,7 @@ def mesh_from_image(
     out_dir: Path | None = None,
     name: str | None = None,
     engine: str | None = None,
+    colored_only: bool = False,
     on_stage=None,
 ) -> Mesh3D:
     """Imagem → malha 3D, no disco."""
@@ -920,7 +921,8 @@ def mesh_from_image(
     stem = safe_stem(name or source.stem)
     destino = unique_path(directory, stem, ".glb")
 
-    caminho, motor = mesh3d.to_mesh(source, destino, engine=engine, on_stage=on_stage)
+    caminho, motor = mesh3d.to_mesh(source, destino, engine=engine,
+                                    colored_only=colored_only, on_stage=on_stage)
     return Mesh3D(
         path=caminho,
         engine=motor.name,
@@ -1057,7 +1059,8 @@ async def sprite_3d(
         gerado = await _run(prompt, out_dir=directory, name=f"{stem}-ref", **kwargs)
         referencia = gerado.paths[0]
 
-    malha = mesh_from_image(referencia, out_dir=directory, name=stem, engine=engine, on_stage=on_stage)
+    malha = mesh_from_image(referencia, out_dir=directory, name=stem, engine=engine,
+                            colored_only=True, on_stage=on_stage)
     volta = render_turntable(
         malha.path,
         out_dir=directory,

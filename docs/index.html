@@ -79,7 +79,7 @@
 <div class="wrap">
 
 <header>
-  <span class="badge">🍌 NanoBridge 0.8.0</span>
+  <span class="badge">🍌 NanoBridge 0.8.1</span>
   <h1><span lang="en">Nano Banana, wired into your agent.</span><span lang="pt">Nano Banana, ligado no seu agente.</span></h1>
   <p class="lede">
     <span lang="en">Gemini's image models as an <strong>MCP server</strong> and a <strong>CLI</strong> — spending the Gemini plan you already pay for, instead of billing per image.</span>
@@ -167,8 +167,8 @@
     <span lang="pt">Os oito quadros acima são esse comando só: uma referência desenhada, uma malha reconstruída, e a malha girada em oito direções <strong>numa escala fixa</strong> — o personagem não cresce e encolhe ao virar, que é a diferença inteira entre sprite usável e sprite tremendo. <code>--pitch 0</code> é a vista lateral de plataforma, <code>--pitch 30</code> é a isométrica de verdade, e os quadros são PNG comum, então <code>atlas</code>, <code>palette</code> e <code>slice</code> continuam funcionando neles.</span>
   </p>
   <p>
-    <span lang="en">The reconstruction runs on free public Hugging Face Spaces — TripoSR (MIT) and Hunyuan3D-2 — so there is no key and no bill; you pay in queueing. The last step, mesh to frames, is a software rasteriser in the repo: NumPy, no GPU, no network, and the same pixels on every machine.</span>
-    <span lang="pt">A reconstrução roda em Space público da Hugging Face — TripoSR (MIT) e Hunyuan3D-2 — sem chave e sem conta; o preço é a fila. O último passo, malha para quadros, é um rasterizador escrito aqui: NumPy, sem placa de vídeo, sem rede, e os mesmos pixels em qualquer máquina.</span>
+    <span lang="en">The reconstruction runs on free public Hugging Face Spaces — TRELLIS, TripoSR and Hunyuan3D — so there is no key and no bill; you pay in queueing. The last step, mesh to frames, is a software rasteriser in the repo: NumPy, no GPU, no network, and the same pixels on every machine.</span>
+    <span lang="pt">A reconstrução roda em Space público da Hugging Face — TRELLIS, TripoSR e Hunyuan3D — sem chave e sem conta; o preço é a fila. O último passo, malha para quadros, é um rasterizador escrito aqui: NumPy, sem placa de vídeo, sem rede, e os mesmos pixels em qualquer máquina.</span>
   </p>
   <p>
     <span lang="en"><strong>The input picture decides everything:</strong> one object, whole, facing the camera, plain background, visible shading. Flat pixel art does not work — there is no volume in it to reconstruct. Measured on this project's own 32×32 hero sprite, the result came back 7% as deep as it was wide, so <code>mesh</code> prints a depth ratio and warns when it collapses.</span>

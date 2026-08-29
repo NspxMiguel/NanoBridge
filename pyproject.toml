@@ -1,6 +1,6 @@
 [project]
 name = "nanobridge"
-version = "0.8.0"
+version = "0.8.1"
 description = "Nano Banana image generation, single-image-to-3D, and a Blender refinement pipeline — as a CLI and an MCP server."
 readme = "README.md"
 requires-python = ">=3.11"

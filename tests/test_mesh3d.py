@@ -144,3 +144,65 @@ def test_turntable_com_paleta_trava_as_cores(tmp_path):
     pixels = np.asarray(Image.open(r.frames[0]).convert("RGBA"))
     visiveis = {tuple(c) for c in pixels[pixels[:, :, 3] > 200][:, :3]}
     assert len(visiveis) <= 4, f"a paleta do Game Boy tem 4 cores, saíram {len(visiveis)}"
+
+
+def test_sem_token_os_de_zerogpu_ficam_fora_da_fila(monkeypatch):
+    """ZeroGPU dá **zero segundo** para quem chega anônimo, então esses motores
+    nunca respondem sem token. Pular é mais honesto que gastar a viagem inteira
+    para receber "cota esgotada"."""
+    monkeypatch.setattr(mesh3d, "hf_token", lambda: None)
+    fila = mesh3d.find(None)
+    assert fila, "sobrou fila vazia — algum motor tem que funcionar sem conta"
+    assert all(not m.needs_token for m in fila)
+
+    monkeypatch.setattr(mesh3d, "hf_token", lambda: "hf_" + "x" * 34)
+    com_token = mesh3d.find(None)
+    assert any(m.needs_token for m in com_token)
+    assert len(com_token) > len(fila)
+
+
+def test_a_fila_de_sprite_so_tem_motor_que_pinta(monkeypatch):
+    """Sprite precisa de cor: malha branca vira silhueta cinza, e não há de onde
+    tirar a pintura depois."""
+    monkeypatch.setattr(mesh3d, "hf_token", lambda: "hf_" + "x" * 34)
+    coloridos = mesh3d.find(None, colored_only=True)
+    assert coloridos, "nenhum motor colorido na fila"
+    assert all(m.colored for m in coloridos)
+
+
+def test_o_token_sai_da_variavel_de_ambiente_antes_do_resto(monkeypatch):
+    monkeypatch.setenv("NANOBRIDGE_HF_TOKEN", "hf_daVariavel")
+    assert mesh3d.hf_token() == "hf_daVariavel"
+
+
+def test_sem_token_em_lugar_nenhum_devolve_none(monkeypatch, tmp_path):
+    """O chaveiro é o último recurso e só existe no macOS; sem nada, tem que
+    devolver None em vez de estourar."""
+    for chave in ("NANOBRIDGE_HF_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        monkeypatch.delenv(chave, raising=False)
+    monkeypatch.setattr(mesh3d.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(mesh3d, "_do_chaveiro", lambda: None)
+    assert mesh3d.hf_token() is None
+
+
+def test_o_chaveiro_e_consultado_uma_vez_so(monkeypatch):
+    """`find()` pergunta pelo token a cada consulta de fila, e um `security`
+    novo por chamada chegou a derrubar a suíte inteira com `BlockingIOError`
+    de tanto subprocesso simultâneo."""
+    chamadas = []
+    monkeypatch.setattr(mesh3d, "_chaveiro_cache", mesh3d._CHAVEIRO_NAO_LIDO)
+    monkeypatch.setattr(mesh3d.sys, "platform", "darwin")
+
+    class Saida:
+        returncode = 0
+        stdout = "hf_doChaveiro\n"
+
+    def falso(*args, **kwargs):
+        chamadas.append(args)
+        return Saida()
+
+    monkeypatch.setattr(mesh3d.subprocess, "run", falso)
+    assert mesh3d._do_chaveiro() == "hf_doChaveiro"
+    for _ in range(5):
+        mesh3d._do_chaveiro()
+    assert len(chamadas) == 1, f"consultou o chaveiro {len(chamadas)} vezes"
