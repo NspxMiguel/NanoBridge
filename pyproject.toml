@@ -5,7 +5,7 @@ description = "Nano Banana image generation, single-image-to-3D, and a Blender r
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }
-authors = [{ name = "Miguel Moretti" }]
+authors = [{ name = "NSPX", email = "miguel@nspx.dev" }]
 keywords = ["gemini", "nano-banana", "image-generation", "mcp", "sprites", "image-to-3d", "blender", "retopology"]
 
 dependencies = [
