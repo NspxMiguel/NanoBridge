@@ -4,12 +4,13 @@ teste que não dependa de rede nem de cota."""
 
 import io
 import json
+from pathlib import Path
 
 import pytest
 from conftest import opaque_colours
 from PIL import Image
 
-from nanobridge import backends, mcp_server
+from nanobridge import backends, core, mcp_server
 from nanobridge.backends.base import Backend, Result
 from nanobridge.errors import SessionExpiredError
 
@@ -209,9 +210,203 @@ def test_apply_palette_tool_unknown_palette_is_a_message(tmp_path):
 
 @pytest.mark.asyncio
 async def test_generate_sprite_accepts_a_palette(fake, tmp_path):
-    parts = await mcp_server.generate_sprite(
-        "a slime", out_dir=str(tmp_path), name="s", palette="gameboy"
-    )
+    parts = await mcp_server.generate_sprite("a slime", out_dir=str(tmp_path), name="s", palette="gameboy")
     path = payload(parts)["paths"][0]
     with Image.open(path) as img:
         assert opaque_colours(img) <= set(mcp_server.palettes.resolve("gameboy"))
+
+
+@pytest.mark.asyncio
+async def test_generate_icon_returns_json_and_the_picture(fake, tmp_path):
+    parts = await mcp_server.generate_icon("a coin", out_dir=str(tmp_path))
+    data = payload(parts)
+    assert data["paths"] and data["backend"] == "fake"
+    assert images(parts), "the agent needs to see what it drew"
+
+
+@pytest.mark.asyncio
+async def test_generate_cast_builds_an_atlas_from_the_group(fake, tmp_path):
+    parts = await mcp_server.generate_cast(["a slime", "a knight"], out_dir=str(tmp_path))
+    data = payload(parts)
+    assert len(data["sprites"]) == 2
+    assert data["atlas"]
+    assert data["failed"] == {}
+    assert images(parts), "the atlas preview has to come back too"
+
+
+@pytest.mark.asyncio
+async def test_generate_cast_keeps_the_others_when_one_subject_fails(monkeypatch, tmp_path):
+    calls = {"n": 0}
+
+    class FlakyBackend(FakeBackend):
+        async def generate(self, prompt, files=None, model=None, conversation=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise SessionExpiredError()
+            return await super().generate(prompt, files=files, model=model, conversation=conversation)
+
+    backend = FlakyBackend()
+    monkeypatch.setattr("nanobridge.core.pick", lambda preferred=None: backend)
+    parts = await mcp_server.generate_cast(["a slime", "a knight"], out_dir=str(tmp_path))
+    data = payload(parts)
+    assert len(data["sprites"]) == 1
+    assert len(data["failed"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_variations_returns_a_contact_sheet(fake, tmp_path):
+    parts = await mcp_server.generate_variations("a slime", count=3, out_dir=str(tmp_path))
+    data = payload(parts)
+    assert len(data["paths"]) == 3
+    assert data["contact_sheet"]
+    assert data["failed"] == []
+    assert images(parts)
+
+
+@pytest.mark.asyncio
+async def test_generate_texture_reports_the_seam(fake, tmp_path):
+    parts = await mcp_server.generate_texture("bricks", out_dir=str(tmp_path))
+    data = payload(parts)
+    assert data["path"]
+    assert "seam" in data and "seam_before" in data
+    assert data["threshold"] == core.SEAM_THRESHOLD
+    assert images(parts)
+
+
+@pytest.mark.asyncio
+async def test_animate_sprite_keeps_the_reference_image(monkeypatch, tmp_path):
+    reference = tmp_path / "knight.png"
+    Image.open(io.BytesIO(png())).save(reference)
+    backend = FakeBackend(images=[sheet_png(4, 1)])
+    monkeypatch.setattr("nanobridge.core.pick", lambda preferred=None: backend)
+
+    parts = await mcp_server.animate_sprite(str(reference), out_dir=str(tmp_path))
+
+    data = payload(parts)
+    assert len(data["frames"]) == 4
+    assert backend.calls[0]["files"], "the existing sprite has to go along as reference"
+
+
+@pytest.mark.asyncio
+async def test_nanobridge_status_lists_backends_and_styles(monkeypatch):
+    backend = FakeBackend()
+    monkeypatch.setattr(mcp_server, "all_backends", lambda: [backend])
+    monkeypatch.setattr(mcp_server, "pick", lambda preferred=None: backend)
+
+    report = await mcp_server.nanobridge_status()
+
+    assert "fake: ready — fake" in report
+    assert "chosen: fake" in report
+    assert "styles:" in report
+
+
+def test_list_atlas_formats_names_every_engine_shape():
+    data = json.loads(mcp_server.list_atlas_formats())
+    assert {"nanobridge", "phaser", "godot", "css", "aseprite"} <= data.keys()
+
+
+def test_list_mesh_engines_lists_the_available_engines():
+    from nanobridge import mesh3d
+
+    data = json.loads(mcp_server.list_mesh_engines())
+    assert [e["name"] for e in data] == [e.name for e in mesh3d.ENGINES]
+    assert all("license" in e and "space" in e for e in data)
+
+
+def test_blender_status_reports_whether_blender_was_found(monkeypatch):
+    monkeypatch.setattr("nanobridge.blender.find_blender", lambda: "/opt/blender/blender")
+    monkeypatch.setattr("nanobridge.blender.version", lambda: "4.2.0")
+    data = json.loads(mcp_server.blender_status())
+    assert data == {"found": "/opt/blender/blender", "version": "4.2.0"}
+
+
+def test_build_normal_map_derives_a_map_from_a_sprite(tmp_path):
+    src = tmp_path / "sprite.png"
+    Image.open(io.BytesIO(png())).save(src)
+    out = tmp_path / "sprite-normal.png"
+
+    parts = mcp_server.build_normal_map(str(src), out=str(out))
+
+    data = json.loads(parts[0].text)
+    assert data["path"] == str(out)
+    assert out.exists()
+    assert images(parts)
+
+
+def test_generate_mesh_wraps_the_reconstruction_result(monkeypatch, tmp_path):
+    mesh_path = tmp_path / "m.glb"
+
+    def fake_mesh_from_image(image, *, out_dir=None, name=None, engine=None, **kwargs):
+        assert image == "ref.png"
+        return core.Mesh3D(
+            path=mesh_path,
+            engine="tripo-sr",
+            engine_label="TripoSR",
+            license="MIT",
+            source_image=Path("ref.png"),
+            stats={"vertices": 10, "faces": 8, "depth_ratio": 0.4, "watertight": True},
+        )
+
+    monkeypatch.setattr(core, "mesh_from_image", fake_mesh_from_image)
+
+    parts = mcp_server.generate_mesh("ref.png", out_dir=str(tmp_path))
+
+    data = json.loads(parts[0].text)
+    assert data["mesh"] == str(mesh_path)
+    assert data["engine"] == "tripo-sr"
+    assert "warning" not in data
+    # previews=0 for a bare mesh: nothing to show yet, only the render tools draw frames.
+    assert len(parts) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_sprite_3d_wraps_the_full_pipeline_result(monkeypatch, tmp_path):
+    mesh_path = tmp_path / "m.glb"
+
+    async def fake_sprite_3d(subject, **kwargs):
+        return core.Mesh3D(
+            path=mesh_path,
+            engine="tripo-sr",
+            engine_label="TripoSR",
+            license="MIT",
+            stats={"depth_ratio": 0.4},
+        )
+
+    monkeypatch.setattr(core, "sprite_3d", fake_sprite_3d)
+
+    parts = await mcp_server.generate_sprite_3d("a round mushroom enemy")
+
+    data = json.loads(parts[0].text)
+    assert data["mesh"] == str(mesh_path)
+    assert data["engine_label"] == "TripoSR"
+
+
+@pytest.mark.asyncio
+async def test_generate_model_3d_wraps_the_refined_result(monkeypatch, tmp_path):
+    output = tmp_path / "chest.glb"
+
+    async def fake_model_3d(subject, **kwargs):
+        return core.Model3D(
+            reference=tmp_path / "ref.png",
+            raw_mesh=tmp_path / "raw.glb",
+            engine="tripo-sr",
+            engine_label="TripoSR",
+            license="MIT",
+            refined=core.Refined(
+                outputs=[output],
+                texture=tmp_path / "chest-albedo.png",
+                before={"faces": 200000},
+                after={"faces": 6000, "quad_ratio": 1.0},
+                retopo=True,
+                uv_created=True,
+            ),
+        )
+
+    monkeypatch.setattr(core, "model_3d", fake_model_3d)
+
+    parts = await mcp_server.generate_model_3d("a wooden treasure chest")
+
+    data = json.loads(parts[0].text)
+    assert data["outputs"] == [str(output)]
+    assert data["engine_label"] == "TripoSR"
+    assert data["raw_mesh"] == str(tmp_path / "raw.glb")

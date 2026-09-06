@@ -19,7 +19,7 @@ try:  # mcp >= 2.0
 except ImportError:  # pragma: no cover - mcp 1.x
     from mcp.server.fastmcp import FastMCP as _Server
     from mcp.server.fastmcp.exceptions import ToolError
-from mcp.types import ImageContent, TextContent
+from mcp.types import ImageContent, TextContent, ToolAnnotations
 
 from . import config, core, imaging, palettes
 from .backends import all_backends, pick
@@ -59,8 +59,6 @@ def handled(fn):
             raise ToolError(str(exc)) from exc
 
     return async_wrapper if inspect.iscoroutinefunction(fn) else sync_wrapper
-
-
 
 
 def _preview(path: Path) -> ImageContent:
@@ -118,7 +116,11 @@ def _kwargs(out_dir: str | None, name: str | None, backend: str | None, model: s
     return kwargs
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_image(
     prompt: str,
@@ -152,7 +154,11 @@ async def generate_image(
     return _respond(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_sprite(
     subject: str,
@@ -180,7 +186,11 @@ async def generate_sprite(
     return _respond(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_icon(
     subject: str,
@@ -202,7 +212,11 @@ async def generate_icon(
     return _respond(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_cast(
     subjects: list[str],
@@ -264,7 +278,11 @@ async def generate_cast(
     return out
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_sprite_sheet(
     subject: str,
@@ -297,7 +315,11 @@ async def generate_sprite_sheet(
     return _respond(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_variations(
     subject: str,
@@ -344,7 +366,11 @@ async def generate_variations(
     return out
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_texture(
     subject: str,
@@ -389,7 +415,11 @@ async def generate_texture(
     return out
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def build_normal_map(
     image: str, out: str | None = None, strength: float = 2.0, blur: float = 1.0
@@ -411,7 +441,11 @@ def build_normal_map(
     return [TextContent(type="text", text=json.dumps({"path": str(target)})), _preview(target)]
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def check_tileable(image: str, preview: bool = False, times: int = 3) -> str:
     """Measure how badly an image jumps when repeated. Local, no quota.
@@ -431,7 +465,11 @@ def check_tileable(image: str, preview: bool = False, times: int = 3) -> str:
     return json.dumps(body, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def repair_tileable(
     image: str, out: str | None = None, blend: float = 0.12
@@ -441,16 +479,26 @@ def repair_tileable(
     target = core.repair_tileable(image, out=Path(out).expanduser() if out else None, blend=blend)
     after = core.check_tileable(target)
     return [
-        TextContent(type="text", text=json.dumps({
-            "path": str(target),
-            "seam_before": {k: round(v, 3) for k, v in before.items()},
-            "seam": {k: round(v, 3) for k, v in after.items()},
-        }, ensure_ascii=False)),
+        TextContent(
+            type="text",
+            text=json.dumps(
+                {
+                    "path": str(target),
+                    "seam_before": {k: round(v, 3) for k, v in before.items()},
+                    "seam": {k: round(v, 3) for k, v in after.items()},
+                },
+                ensure_ascii=False,
+            ),
+        ),
         _preview(target),
     ]
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def animate_sprite(
     image: str,
@@ -486,7 +534,11 @@ async def animate_sprite(
     return _respond(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def edit_image(
     image: str,
@@ -516,7 +568,11 @@ async def edit_image(
     return _respond(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def list_atlas_formats() -> str:
     """The manifest formats `pack_atlas` can write, and what reads each one."""
@@ -533,7 +589,11 @@ def list_atlas_formats() -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def list_palettes() -> str:
     """The built-in palettes available to `palette` arguments, with their colours."""
@@ -548,7 +608,11 @@ def list_palettes() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def extract_palette(image: str, count: int = 16, out: str | None = None) -> str:
     """Read the dominant, visually distinct colours out of an existing image.
@@ -571,7 +635,11 @@ def extract_palette(image: str, count: int = 16, out: str | None = None) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def apply_palette(
     image: str,
@@ -590,7 +658,11 @@ def apply_palette(
     return [TextContent(type="text", text=json.dumps({"path": str(target)})), _preview(target)]
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def cut_image(
     image: str,
@@ -618,7 +690,11 @@ def cut_image(
     return [TextContent(type="text", text=json.dumps({"path": str(target)})), _preview(target)]
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def slice_sheet(
     image: str,
@@ -662,7 +738,11 @@ def slice_sheet(
     return out
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def pack_atlas(
     images: list[str],
@@ -705,7 +785,11 @@ def pack_atlas(
     ]
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+    )
+)
 @handled
 async def nanobridge_status() -> str:
     """Which backend is live, and how much quota the account has left."""
@@ -726,7 +810,11 @@ async def nanobridge_status() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 async def nanobridge_reset() -> str:
     """Drop the cached Gemini web session.
@@ -772,7 +860,11 @@ def _respond_mesh(result: core.Mesh3D, previews: int = 4) -> list[TextContent | 
     return saida
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def list_mesh_engines() -> str:
     """The 3D engines NanoBridge can call, and what each one gives back.
@@ -800,7 +892,11 @@ def list_mesh_engines() -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 def generate_mesh(
     image: str,
@@ -824,7 +920,11 @@ def generate_mesh(
     return _respond_mesh(resultado, previews=0)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def render_turntable(
     mesh: str,
@@ -853,14 +953,28 @@ def render_turntable(
     `apply_palette` and `slice_sheet` all work on them afterwards.
     """
     resultado = core.render_turntable(
-        mesh, out_dir=Path(out_dir) if out_dir else None, name=name, frames=frames,
-        size=size, pitch=pitch, start=start, zoom=zoom, engine=engine, gif=gif,
-        fps=fps, pixels=pixels, palette=palette,
+        mesh,
+        out_dir=Path(out_dir) if out_dir else None,
+        name=name,
+        frames=frames,
+        size=size,
+        pitch=pitch,
+        start=start,
+        zoom=zoom,
+        engine=engine,
+        gif=gif,
+        fps=fps,
+        pixels=pixels,
+        palette=palette,
     )
     return _respond_mesh(resultado)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_sprite_3d(
     subject: str,
@@ -890,9 +1004,19 @@ async def generate_sprite_3d(
     reuse a picture you already have and skip the drawing step.
     """
     resultado = await core.sprite_3d(
-        subject, out_dir=Path(out_dir) if out_dir else None, name=name, engine=engine,
-        frames=frames, size=size, pitch=pitch, zoom=zoom, gif=gif, fps=fps,
-        pixels=pixels, palette=palette, reference=reference,
+        subject,
+        out_dir=Path(out_dir) if out_dir else None,
+        name=name,
+        engine=engine,
+        frames=frames,
+        size=size,
+        pitch=pitch,
+        zoom=zoom,
+        gif=gif,
+        fps=fps,
+        pixels=pixels,
+        palette=palette,
+        reference=reference,
     )
     return _respond_mesh(resultado)
 
@@ -917,7 +1041,11 @@ def _respond_refined(result: core.Refined, renders=None) -> list[TextContent | I
     return saida
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def blender_status() -> str:
     """Whether Blender is reachable, and where. Refining and rendering need it.
@@ -928,11 +1056,14 @@ def blender_status() -> str:
     """
     from . import blender
 
-    return json.dumps({"found": blender.find_blender(), "version": blender.version()},
-                      ensure_ascii=False)
+    return json.dumps({"found": blender.find_blender(), "version": blender.version()}, ensure_ascii=False)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def refine_mesh(
     mesh: str,
@@ -961,13 +1092,22 @@ def refine_mesh(
     still triangles.
     """
     resultado = core.refine_mesh(
-        mesh, out_dir=Path(out_dir) if out_dir else None, name=name, faces=faces,
-        retopo=retopo, texture_size=texture_size, formats=formats or [".glb"],
+        mesh,
+        out_dir=Path(out_dir) if out_dir else None,
+        name=name,
+        faces=faces,
+        retopo=retopo,
+        texture_size=texture_size,
+        formats=formats or [".glb"],
     )
     return _respond_refined(resultado)
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+)
 @handled
 def render_mesh(
     mesh: str,
@@ -991,8 +1131,15 @@ def render_mesh(
     `engine` is "eevee" (seconds) or "cycles" (minutes, and better).
     """
     caminhos = core.render_mesh(
-        mesh, out_dir=Path(out_dir) if out_dir else None, name=name, frames=frames,
-        size=size, pitch=pitch, engine=engine, samples=samples, transparent=transparent,
+        mesh,
+        out_dir=Path(out_dir) if out_dir else None,
+        name=name,
+        frames=frames,
+        size=size,
+        pitch=pitch,
+        engine=engine,
+        samples=samples,
+        transparent=transparent,
         mesh_engine=mesh_engine,
     )
     resumo = {"frames": [str(p) for p in caminhos]}
@@ -1004,7 +1151,11 @@ def render_mesh(
     return saida
 
 
-@mcp.tool()
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    )
+)
 @handled
 async def generate_model_3d(
     subject: str,
@@ -1037,18 +1188,29 @@ async def generate_model_3d(
     Needs Blender — check `blender_status` first.
     """
     resultado = await core.model_3d(
-        subject, out_dir=Path(out_dir) if out_dir else None, name=name, kind=kind,
-        engine=engine, faces=faces, texture_size=texture_size,
-        formats=formats or [".glb", ".fbx", ".blend"], render_frames=render_frames,
-        render_size=render_size, render_engine=render_engine, reference=reference,
+        subject,
+        out_dir=Path(out_dir) if out_dir else None,
+        name=name,
+        kind=kind,
+        engine=engine,
+        faces=faces,
+        texture_size=texture_size,
+        formats=formats or [".glb", ".fbx", ".blend"],
+        render_frames=render_frames,
+        render_size=render_size,
+        render_engine=render_engine,
+        reference=reference,
     )
     saida = _respond_refined(resultado.refined, resultado.renders) if resultado.refined else []
     if saida:
         dados = json.loads(saida[0].text)
-        dados.update(reference=str(resultado.reference) if resultado.reference else None,
-                     raw_mesh=str(resultado.raw_mesh) if resultado.raw_mesh else None,
-                     engine=resultado.engine, engine_label=resultado.engine_label,
-                     license=resultado.license)
+        dados.update(
+            reference=str(resultado.reference) if resultado.reference else None,
+            raw_mesh=str(resultado.raw_mesh) if resultado.raw_mesh else None,
+            engine=resultado.engine,
+            engine_label=resultado.engine_label,
+            license=resultado.license,
+        )
         saida[0] = TextContent(type="text", text=json.dumps(dados, ensure_ascii=False))
     return saida
 
