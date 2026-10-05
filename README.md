@@ -496,10 +496,6 @@ What it does that NanoBridge does not: 2x upscale via a dedicated RPC (though
 [Limits worth knowing](#limits-worth-knowing)), watermark removal, video/URL
 analysis, and open-ended text chat.
 
-## Support
-
-Free and open source. If it saved you time, pay what it was worth at [nspx.dev/loja](https://www.nspx.dev/loja/) — any amount, no account.
-
 ## License
 
 AGPL-3.0-or-later. This is not the default choice — it's inherited: NanoBridge
